@@ -1,6 +1,6 @@
-# Preventive Care Gap Closure: Unscripted, Real time Voice Outreach (PoC)
+# Preventive Care Gap Closure: Real time Voice Outreach (PoC)
 
-> **Purpose:** Demonstrate an end to end voice pipeline that identifies patients due for preventive screenings from synthetic EHR like data, generates a concise reason for outreach, and calls them to book an appointment using Azure Communication Services and Azure OpenAI Voice Live for low latency, multilingual speech to speech.
+> **Purpose:** Demonstrate an end to end voice pipeline that identifies patients due for preventive screenings from synthetic EHR like data, generates a concise reason for outreach, and calls them to book an appointment using Azure Communication Services, Azure AI Voice Live service, and Azure OpenAI realtime models for low latency, multilingual speech to speech.
 
 > **HIPAA disclaimer:** This repository is exploratory. It is not HIPAA compliant. Do not use with real PHI. The long term intent is to develop a compliant variant with proper safeguards. See To Do and Roadmap.
 
@@ -41,6 +41,7 @@
   * explains the screening and answers common non clinical questions
   * provides basic procedure information
   * offers appointment times using a mocked scheduler
+  * is powered by **Azure AI Voice Live service** with **Azure OpenAI realtime models** for speech to speech
 
 ### Why it matters
 
@@ -73,15 +74,17 @@ Unscripted conversation that uses the patient `CALL_BRIEF` for context and follo
 Simulated EHR -> Gap Detector -> Patient Summary (CALL_BRIEF)
                          |
                       FastAPI App
-   ACS Webhooks and Media WS        Azure OpenAI Voice Live WS
+   ACS Webhooks and Media WS        Azure AI Voice Live WS
                  \                          /
                  Pacer + Jitter Buffer + VAD
+                           |
+                 Azure OpenAI Realtime Models
                            |
                         Phone Call
 ```
 
 * Telephony: Azure Communication Services for PSTN, event webhooks, media WebSocket
-* Realtime voice: Azure OpenAI Voice Live API and Realtime models
+* Realtime voice: **Azure AI Voice Live service** and **Azure OpenAI realtime models**
 * App: FastAPI with a bidirectional audio bridge, adaptive commit, jitter buffer, pacing
 * State and metrics: In memory, exposed at `/status`
 
@@ -97,8 +100,8 @@ Simulated EHR -> Gap Detector -> Patient Summary (CALL_BRIEF)
 ## Features
 
 * Outbound PSTN calls using ACS
-* Bidirectional low latency audio streaming between phone and Voice Live
-* AI powered conversation with configurable system prompt and voice
+* Bidirectional low latency audio streaming between the phone, **Azure AI Voice Live service**, and **Azure OpenAI realtime models**
+* AI powered conversation using Voice Live plus OpenAI realtime, with configurable system prompt and voice
 * Parameter driven calls with per request overrides for target number and prompt
 * Dynamic audio playback from the AI back to the callee
 * Event driven call management via ACS callbacks
@@ -114,7 +117,7 @@ Simulated EHR -> Gap Detector -> Patient Summary (CALL_BRIEF)
 * Python 3.10 or higher
 * Azure subscription
 * Azure Communication Services resource with an outbound phone number
-* Azure AI Foundry resource with an Azure OpenAI real time speech to speech deployment and API key
+* Azure AI Foundry resource with **Azure AI Voice Live** and **Azure OpenAI realtime** deployments and an API key
 * `ngrok` for a public HTTPS tunnel during local development
 
 ---
@@ -144,7 +147,7 @@ Create a `.env` file in the repo root.
 | `ACS_CONNECTION_STRING`                       | ACS resource connection string                | `endpoint=...;accesskey=...`                            |
 | `ACS_FROM_NUMBER` or `ACS_OUTBOUND_CALLER_ID` | E.164 caller ID purchased in ACS              | `+18005551234`                                          |
 | `ACS_TO_NUMBER` or `TARGET_PHONE_NUMBER`      | Default callee phone number                   | `+18005555678`                                          |
-| `VL_WS_URL` or `AI_FOUNDRY_ENDPOINT`          | Voice Live WebSocket URL                      | `wss://<resource>.openai.azure.com/openai/realtime?...` |
+| `VL_WS_URL` or `AI_FOUNDRY_ENDPOINT`          | **Azure AI Voice Live** WebSocket endpoint    | `wss://<resource>.openai.azure.com/openai/realtime?...` |
 | `VL_API_KEY` or `AI_FOUNDRY_API_KEY`          | Azure OpenAI API key                          | `***`                                                   |
 | `VOICE_LIVE_MODEL`                            | Voice Live model deployment name              | `gpt-4o-realtime-preview`                               |
 | `VL_VOICE` or `DEFAULT_VOICE`                 | Default TTS voice                             | `verse` or `en-US-AvaNeural`                            |
