@@ -1,0 +1,32 @@
+# Python cache & compiled files
+__pycache__/
+*.py[cod]
+*.so
+
+# Environment variables - DO NOT COMMIT SECRETS
+.env
+.env.*
+.venv
+env/
+venv/
+
+# Node.js dependencies
+/node_modules/
+
+# Logs and status folders
+/logs/
+/status/
+
+# Log files and media captures
+*.log
+*.wav
+
+.requirements.hash
+
+
+commands.md
+TASKS.md
+CODE_REVIEW.md
+COMMENTING.md
+.env
+.env

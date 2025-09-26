@@ -1,0 +1,102 @@
+{
+  "patient_id": "0002043319",
+  "MRN": "0002043319",
+  "demographics": {
+    "first_name": "Robert",
+    "last_name": "J. Smith",
+    "date_of_birth": "1970-03-12",
+    "sex": "male"
+  },
+  "clinical_notes": [
+    {
+      "date": "2020-01-15",
+      "note_type": "Annual Physical",
+      "id": "n001",
+      "text": "Robert J. Smith, 49 y.o. male, presents for annual exam. Reports mild fatigue but otherwise healthy. No chest pain or shortness of breath. BMI: 29. BP: 138/82. Non-smoker. No regular exercise. Assessment: overweight, borderline hypertension. Plan: counsel on weight loss and exercise; labs ordered."
+    },
+    {
+      "date": "2020-01-16",
+      "note_type": "Lab Results",
+      "id": "n002",
+      "text": "Basic metabolic panel normal. Lipids: LDL 142 (elevated), HDL 45. Fasting glucose: 102 (borderline). Plan: dietary counseling."
+    },
+    {
+      "date": "2020-03-05",
+      "note_type": "Progress Notes",
+      "id": "n003",
+      "text": "Complaint: sinus congestion, cough. Diagnosed with viral URI. Recommended fluids, OTC decongestants. No antibiotics prescribed."
+    },
+    {
+      "date": "2021-02-20",
+      "note_type": "Annual Physical",
+      "id": "n004",
+      "text": "50 y.o. male. BP: 142/88. Weight: 198 lbs. Reports occasional constipation. Family history: Father had colon cancer at age 62. Counseled on colon cancer screening; referral placed for colonoscopy."
+    },
+    {
+      "date": "2021-02-21",
+      "note_type": "Patient Instructions",
+      "id": "n005",
+      "text": "Instruction: Please schedule your colonoscopy as discussed with Dr. Adams. Call GI clinic at 555-222-8888 to arrange appointment."
+    },
+    {
+      "date": "2021-06-14",
+      "note_type": "Progress Notes",
+      "id": "n006",
+      "text": "Follow-up on cholesterol. LDL remains high at 150. Started atorvastatin 20 mg daily. Reports no muscle aches. Encouraged diet changes."
+    },
+    {
+      "date": "2021-09-12",
+      "note_type": "Progress Notes",
+      "id": "n007",
+      "text": "Complaint: mild back pain. No trauma. Exam benign. Treated conservatively with stretching exercises and ibuprofen PRN."
+    },
+    {
+      "date": "2022-02-25",
+      "note_type": "Annual Physical",
+      "id": "n008",
+      "text": "51 y.o. male. BP: 136/80. Weight: 194 lbs. Reports he never scheduled the colonoscopy despite prior referral. Advised again to complete screening."
+    },
+    {
+      "date": "2022-04-15",
+      "note_type": "Lab Results",
+      "id": "n009",
+      "text": "Fasting glucose: 108. A1C: 5.7%. Lipids: LDL 132. Stable renal function. Continue atorvastatin."
+    },
+    {
+      "date": "2022-09-05",
+      "note_type": "Telephone Encounter",
+      "id": "n010",
+      "text": "Patient called for guidance on home stool FIT test. Explained test is acceptable but colonoscopy preferred given family history. Patient agreed to consider colonoscopy referral again."
+    },
+    {
+      "date": "2023-03-02",
+      "note_type": "Annual Physical",
+      "id": "n011",
+      "text": "53 y.o. male. Reports good adherence to statin, cholesterol improved. BP borderline. Discussed exercise and diet. Advised again colonoscopy is overdue, patient acknowledges but has not scheduled."
+    },
+    {
+      "date": "2023-07-18",
+      "note_type": "Progress Notes",
+      "id": "n012",
+      "text": "Complaint: left knee pain after jogging. Exam shows mild effusion, likely early osteoarthritis. Referred to physical therapy. Continue ibuprofen PRN."
+    },
+    {
+      "date": "2024-02-20",
+      "note_type": "Annual Physical",
+      "id": "n013",
+      "text": "54 y.o. male. BP: 138/84. BMI: 28. No acute complaints. Past reminders about colonoscopy documented. Patient states he will schedule this year. Labs ordered."
+    },
+    {
+      "date": "2024-03-05",
+      "note_type": "Lab Results",
+      "id": "n014",
+      "text": "Fasting glucose: 111 (impaired fasting glucose). LDL 128. Continue statin. Counsel weight loss. Screening: colonoscopy not yet documented."
+    },
+    {
+      "date": "2025-02-18",
+      "note_type": "Annual Physical",
+      "id": "n015",
+      "text": "55 y.o. male. Doing well overall. BP 134/82. Cholesterol improved on statin. No chest pain or SOB. Colonoscopy still not documented despite multiple reminders. Strongly advised to schedule as soon as possible."
+    }
+  ]
+}

@@ -1,0 +1,102 @@
+{
+  "patient_id": "0003058821",
+  "MRN": "0003058821",
+  "demographics": {
+    "first_name": "Laura",
+    "last_name": "K. Johnson",
+    "date_of_birth": "1978-07-09",
+    "sex": "female"
+  },
+  "clinical_notes": [
+    {
+      "date": "2020-02-12",
+      "note_type": "Annual Physical",
+      "id": "m001",
+      "text": "Laura K. Johnson, 41 y.o. female, presents for routine exam. BP 122/78. BMI 26. No complaints. Family history: Mother diagnosed with breast cancer at age 54. Plan: counsel on preventive screenings. Patient declined mammogram today, states she will schedule next year."
+    },
+    {
+      "date": "2020-02-13",
+      "note_type": "Lab Results",
+      "id": "m002",
+      "text": "CBC and BMP normal. Lipid panel: LDL 126. HDL 59. Fasting glucose 96. All other labs WNL."
+    },
+    {
+      "date": "2020-09-22",
+      "note_type": "Progress Notes",
+      "id": "m003",
+      "text": "Complaint: sore throat and mild fever. Diagnosed with strep throat. Treated with amoxicillin 500 mg PO BID x 10 days."
+    },
+    {
+      "date": "2021-03-01",
+      "note_type": "Annual Physical",
+      "id": "m004",
+      "text": "42 y.o. female. BP 124/80. BMI 27. Reports she has not yet had her mammogram done. Reminded again, referral provided. Encouraged patient to schedule within the year."
+    },
+    {
+      "date": "2021-08-10",
+      "note_type": "Progress Notes",
+      "id": "m005",
+      "text": "Complaint: seasonal allergies. Refilled loratadine 10 mg daily. No other concerns. Mammogram status remains not documented in EHR."
+    },
+    {
+      "date": "2022-02-28",
+      "note_type": "Annual Physical",
+      "id": "m006",
+      "text": "43 y.o. female. Weight: 163 lbs. Reports increased stress, poor sleep. No breast complaints. Mammogram reminder placed again, overdue since 2020 referral."
+    },
+    {
+      "date": "2022-03-01",
+      "note_type": "Patient Instructions",
+      "id": "m007",
+      "text": "Instruction: Please schedule mammogram at Women's Imaging Center, call 555-222-8899."
+    },
+    {
+      "date": "2022-09-12",
+      "note_type": "Progress Notes",
+      "id": "m008",
+      "text": "Complaint: left ankle sprain after fall. Exam consistent with mild sprain. Treated with rest, ice, compression, elevation. Noted again no mammogram result in chart."
+    },
+    {
+      "date": "2023-02-15",
+      "note_type": "Annual Physical",
+      "id": "m009",
+      "text": "44 y.o. female. BP 126/82. BMI 27. Labs ordered. Mammogram discussed again; patient acknowledges but has not scheduled. Plan: follow-up in 1 year."
+    },
+    {
+      "date": "2023-02-16",
+      "note_type": "Lab Results",
+      "id": "m010",
+      "text": "Fasting glucose 101 (borderline). LDL 132. HDL 58. Counseled diet and exercise."
+    },
+    {
+      "date": "2023-07-09",
+      "note_type": "Telephone Encounter",
+      "id": "m011",
+      "text": "Patient called to request refill for trazodone 50 mg at bedtime for insomnia. Reminded again mammogram is overdue. Patient agreed to consider scheduling."
+    },
+    {
+      "date": "2024-02-20",
+      "note_type": "Annual Physical",
+      "id": "m012",
+      "text": "45 y.o. female. Stable overall health. BMI 27. Mammogram overdue for >3 years now. Provider strongly recommended to schedule at next available opportunity."
+    },
+    {
+      "date": "2024-09-05",
+      "note_type": "Progress Notes",
+      "id": "m013",
+      "text": "Complaint: mild depression symptoms. PHQ-9 score 8. Started sertraline 50 mg daily. No acute safety concerns."
+    },
+    {
+      "date": "2025-02-18",
+      "note_type": "Annual Physical",
+      "id": "m014",
+      "text": "46 y.o. female. BP 124/80. BMI 26. Labs ordered. Mammogram still not documented despite multiple reminders across 3 years. Strongly advised to schedule. Family history of breast cancer increases urgency."
+    },
+    {
+      "date": "2025-03-10",
+      "note_type": "Lab Results",
+      "id": "m015",
+      "text": "Fasting glucose 103. Lipids: LDL 129. HDL 62. Vitamin D borderline low at 28 ng/mL. Mammogram status remains missing in record."
+    }
+  ]
+}

@@ -1,0 +1,102 @@
+{
+  "patient_id": "0004097712",
+  "MRN": "0004097712",
+  "demographics": {
+    "first_name": "Michael",
+    "last_name": "A. Rivera",
+    "date_of_birth": "1977-11-03",
+    "sex": "male"
+  },
+  "clinical_notes": [
+    {
+      "date": "2020-02-05",
+      "note_type": "Annual Physical",
+      "id": "nf001",
+      "text": "Michael A. Rivera, 42 y.o. male, presents for routine exam. BP 120/76. BMI 25. Non-smoker. Exercises regularly. No complaints. Vaccinations up to date."
+    },
+    {
+      "date": "2020-02-06",
+      "note_type": "Lab Results",
+      "id": "nf002",
+      "text": "CBC, BMP, lipid panel normal. LDL 112. Fasting glucose 90. No abnormal values."
+    },
+    {
+      "date": "2020-08-15",
+      "note_type": "Progress Notes",
+      "id": "nf003",
+      "text": "Complaint: sore throat, mild URI. Rapid strep negative. Supportive care advised. Symptoms resolved."
+    },
+    {
+      "date": "2021-02-10",
+      "note_type": "Annual Physical",
+      "id": "nf004",
+      "text": "43 y.o. male. Stable health. BP 118/74. BMI 25. Colonoscopy referral discussed for age 45. Patient will plan for screening in 2 years."
+    },
+    {
+      "date": "2021-02-11",
+      "note_type": "Lab Results",
+      "id": "nf005",
+      "text": "Lipids: LDL 109, HDL 60. Fasting glucose 92. Stable."
+    },
+    {
+      "date": "2021-09-02",
+      "note_type": "Progress Notes",
+      "id": "nf006",
+      "text": "Complaint: mild ankle sprain after hiking. No fracture. Conservative management. No follow-up needed."
+    },
+    {
+      "date": "2022-02-09",
+      "note_type": "Annual Physical",
+      "id": "nf007",
+      "text": "44 y.o. male. Excellent health. Up to date on vaccinations. No complaints. Plan: continue exercise, healthy diet."
+    },
+    {
+      "date": "2022-02-10",
+      "note_type": "Lab Results",
+      "id": "nf008",
+      "text": "All values within normal limits. LDL 104. A1C 5.4%. Normal renal and liver function."
+    },
+    {
+      "date": "2022-11-15",
+      "note_type": "Colonoscopy Report",
+      "id": "nf009",
+      "text": "Screening colonoscopy performed at age 45. Findings: normal mucosa throughout, no polyps, no lesions. Recommendation: repeat in 10 years."
+    },
+    {
+      "date": "2023-02-08",
+      "note_type": "Annual Physical",
+      "id": "nf010",
+      "text": "45 y.o. male. Reports colonoscopy was normal in 2022. BP 122/78. BMI 25. No issues. Up to date on preventive screenings."
+    },
+    {
+      "date": "2023-02-09",
+      "note_type": "Lab Results",
+      "id": "nf011",
+      "text": "Cholesterol 174 (LDL 106, HDL 61). Fasting glucose 93. Kidney and liver function normal."
+    },
+    {
+      "date": "2023-06-20",
+      "note_type": "Progress Notes",
+      "id": "nf012",
+      "text": "Complaint: allergic rhinitis. Restarted loratadine 10 mg daily. No complications."
+    },
+    {
+      "date": "2024-02-07",
+      "note_type": "Annual Physical",
+      "id": "nf013",
+      "text": "46 y.o. male. Stable health. Exercise 4x per week. Up to date on vaccines and colonoscopy. No chronic conditions."
+    },
+    {
+      "date": "2024-02-08",
+      "note_type": "Lab Results",
+      "id": "nf014",
+      "text": "Lipid panel and A1C within normal range. No abnormalities noted. Continue routine monitoring."
+    },
+    {
+      "date": "2025-02-05",
+      "note_type": "Annual Physical",
+      "id": "nf015",
+      "text": "47 y.o. male. Excellent health. Colonoscopy completed in 2022, repeat not due until 2032. Labs and vaccines up to date. No new concerns. No follow-up needed at this time."
+    }
+  ]
+}
