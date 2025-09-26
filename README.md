@@ -1,4 +1,4 @@
-# Preventive Care Gap Closure — Real time Voice Outreach (PoC)
+# Preventive Care Gap Closure: Unscripted, Real time Voice Outreach (PoC)
 
 > **Purpose:** Demonstrate an end to end voice pipeline that identifies patients due for preventive screenings from synthetic EHR like data, generates a concise reason for outreach, and calls them to book an appointment using Azure Communication Services and Azure OpenAI Voice Live for low latency, multilingual speech to speech.
 
@@ -33,14 +33,14 @@
 
 ### What it does
 
-* Detects preventive care gaps from synthetic EHR like JSON such as mammogram or colonoscopy due
+* Detects preventive care gaps from synthetic EHR like data such as mammogram or colonoscopy due
 * Summarizes patient context in plain language as a `CALL_BRIEF`
-* Calls the patient and runs a real time, multilingual conversation that
+* Calls the patient and runs a real time, **unscripted** multilingual conversation that
 
-  * explains the screening
-  * answers common non clinical questions
-  * offers appointment times using a mocked scheduler or routes to a human
-* Logs outcomes such as booked, declined, callback to a PoC datastore and exposes basic status metrics
+  * uses the patient specific `CALL_BRIEF` as context so responses stay on topic
+  * explains the screening and answers common non clinical questions
+  * provides basic procedure information
+  * offers appointment times using a mocked scheduler
 
 ### Why it matters
 
@@ -50,10 +50,20 @@
 * Equity: Native language conversations reduce access barriers
 
 **Example dialog**
+Unscripted conversation that uses the patient `CALL_BRIEF` for context and follows guardrails.
 
-* Agent: “Hi [Name], I am calling from [Clinic]. You are due for a mammogram. Your last one was June 2023. I can help schedule. Do mornings or afternoons work better”
-* Patient: “Afternoons.”
-* Agent: “I have Tuesday at 3:20 pm or Thursday at 1:40 pm at Main Street. Which works”
+* **Patient:** Hello
+* **Agent:** Hi, is this [Name]
+* **Patient:** Yes
+* **Agent:** Great. I am calling from [Clinic]. You are due for a mammogram. Your last one was in [Month YYYY]. Is it okay if we set that up now
+* **Patient:** Sure
+* **Agent:** It takes about 20 minutes. Do mornings or afternoons work better for you
+* **Patient:** Afternoons
+* **Agent:** I have Tuesday at 3:20 pm or Thursday at 1:40 pm at [Location]. Which do you prefer
+* **Patient:** Thursday
+* **Agent:** Perfect. You are set for Thursday at 1:40 pm at [Location]. I can text a reminder. Want that
+* **Patient:** Yes
+* **Agent:** Done. Bring a photo ID and your insurance card if you have one. If plans change, reply to the text or call [Number]. Have a good day
 
 ---
 
@@ -71,7 +81,7 @@ Simulated EHR -> Gap Detector -> Patient Summary (CALL_BRIEF)
 ```
 
 * Telephony: Azure Communication Services for PSTN, event webhooks, media WebSocket
-* Realtime voice: Azure OpenAI Voice Live for ASR, TTS, and turn taking
+* Realtime voice: Azure OpenAI Voice Live API and Realtime models
 * App: FastAPI with a bidirectional audio bridge, adaptive commit, jitter buffer, pacing
 * State and metrics: In memory, exposed at `/status`
 
@@ -86,14 +96,16 @@ Simulated EHR -> Gap Detector -> Patient Summary (CALL_BRIEF)
 
 ## Features
 
-* Outbound PSTN calls using ACS and a purchased number
+* Outbound PSTN calls using ACS
 * Bidirectional low latency audio streaming between phone and Voice Live
 * AI powered conversation with configurable system prompt and voice
-* Parameter driven calls with per request overrides of target number and prompt
+* Parameter driven calls with per request overrides for target number and prompt
 * Dynamic audio playback from the AI back to the callee
 * Event driven call management via ACS callbacks
 * Detailed status monitoring at `/status`
 * Adaptive VAD and pacing to buffer, commit, and synthesize with minimal lag
+* **Context injection** per call. The `CALL_BRIEF` is injected so the agent speaks to the right patient, procedure, and timing
+* **Safety guardrails** via system prompt and policies. Identity disclosure, purpose, opt out, respectful tone, non clinical scope, and language control
 
 ---
 
@@ -102,7 +114,7 @@ Simulated EHR -> Gap Detector -> Patient Summary (CALL_BRIEF)
 * Python 3.10 or higher
 * Azure subscription
 * Azure Communication Services resource with an outbound phone number
-* Azure OpenAI resource with a Voice Live deployment and API key
+* Azure AI Foundry resource with an Azure OpenAI real time speech to speech deployment and API key
 * `ngrok` for a public HTTPS tunnel during local development
 
 ---
@@ -213,6 +225,8 @@ curl -X POST "$APP_BASE_URL/call/start" \
   -H "Content-Type: application/json" \
   -d '{"target_phone_number": null, "system_prompt": "You are a friendly scheduler. Keep answers short."}'
 ```
+
+The `system_prompt` and the injected `CALL_BRIEF` guide the agent so the conversation remains unscripted, context aware, and within guardrails.
 
 ---
 
@@ -328,12 +342,12 @@ Inputs are synthetic and loosely OMOP like. They are flattened and simplified fo
 
 **When to use Notebook vs App**
 
-| Use case                        | Notebook | App                       |
-| ------------------------------- | -------- | ------------------------- |
-| Prompt and content iteration    | Yes      | No                        |
-| Streaming, turn taking, latency | No       | Yes                       |
-| Small batch generation          | Yes      | Limited and not optimized |
-| End to end voice validation     | No       | Yes                       |
+| Use case                          | Notebook | App                       |
+| --------------------------------- | -------- | ------------------------- |
+| Prompt and content iteration      | Yes      | No                        |
+| Unscripted real time conversation | No       | Yes                       |
+| Small batch generation            | Yes      | Limited and not optimized |
+| End to end voice validation       | No       | Yes                       |
 
 **Limitations**
 Single threaded, minimal error handling, not schema rigorous, not a medical device, no HIPAA controls, outbound demo is one way only.
@@ -342,27 +356,41 @@ Single threaded, minimal error handling, not schema rigorous, not a medical devi
 
 ## Safety, Scope, and Non Goals
 
-* Data
+* **Data**
   Synthetic only in this repo. Production requires HIPAA controls, a BAA, audit, and data minimization.
 
-* Consent and disclosures
+* **Consent and disclosures**
   Open with identity, purpose, and opt out. Respect do not call lists.
 
-* Escalation
-  Conversations are non clinical. Clinical signals route to a human.
+* **Guardrails**
+  Conversations are unscripted but constrained by system instructions and the injected `CALL_BRIEF`. The agent
 
-* Fairness
+  * stays within reminder, education, and scheduling scope
+  * avoids clinical diagnosis, treatment, or individualized medical advice
+  * discloses identity and purpose, honors opt out, and maintains a respectful tone
+  * uses the selected language consistently
+  * minimizes sensitive data in prompts and logs
+
+* **Escalation**
+  This PoC does not support live transfer or triage to a human. If a caller requests clinical guidance or complex help, instruct them to contact the clinic directly.
+
+* **Write back and integrations**
+  This PoC does not write back to an EHR, FHIR store, scheduler, or CRM. All scheduling is mocked.
+
+* **Fairness**
   Use consistent scripts across languages in plain language.
 
 **PoC in scope**
-Synthetic gap detection, patient summary, multilingual live calling, mocked schedule, basic metrics
+Synthetic gap detection, patient summary, multilingual live calling, mocked scheduling, basic metrics
 
 **Out of scope**
-EMR write back, clinical triage, payer rules, PHI storage, security hardening
+EHR write back, clinical triage or escalation, payer rules, PHI storage, security hardening
 
 ---
 
 ## To Do
+
+Near term, actionable engineering tasks.
 
 * Deploy to Azure with repeatable infrastructure
 
@@ -375,13 +403,14 @@ EMR write back, clinical triage, payer rules, PHI storage, security hardening
   * Provide a basic Bicep or Terraform template in `infra`
 * Add automated smoke tests for `/call/start`, `/media`, and `/status`
 * Add CI checks such as lint, type check, unit tests, and container build
-* Document cost guardrails and quotas for ACS and OpenAI usage
-* Prepare a HIPAA readiness checklist in `docs` that maps controls to Azure services
+* Document cost guardrails and quotas for ACS and Azure OpenAI usage
 * Validate security headers, CORS, and rate limits in the FastAPI app
 
 ---
 
 ## Roadmap
+
+Forward looking product and compliance work.
 
 * HIPAA readiness path
 
