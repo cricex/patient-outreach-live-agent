@@ -41,7 +41,7 @@
   * explains the screening and answers common non clinical questions
   * provides basic procedure information
   * offers appointment times using a mocked scheduler
-  * is powered by **Azure AI Voice Live service** with **Azure OpenAI realtime models** for speech to speech
+  * is powered by **Azure Communication service** and **Azure AI Voice Live service** with **Azure OpenAI realtime models** for speech to speech
 
 ### Why it matters
 
@@ -139,26 +139,38 @@ pip install -r requirements.txt
 
 ## .env Configuration
 
-Create a `.env` file in the repo root.
+This project uses three separate environment files to manage configuration for different environments. This separation makes the deployment process more robust and prevents local development settings from accidentally leaking into production.
 
-| Variable                                      | Description                                   | Example                                                 |
-| --------------------------------------------- | --------------------------------------------- | ------------------------------------------------------- |
-| `APP_BASE_URL`                                | Public base URL of your app such as ngrok URL | `https://<subdomain>.ngrok-free.app`                    |
-| `ACS_CONNECTION_STRING`                       | ACS resource connection string                | `endpoint=...;accesskey=...`                            |
-| `ACS_FROM_NUMBER` or `ACS_OUTBOUND_CALLER_ID` | E.164 caller ID purchased in ACS              | `+18005551234`                                          |
-| `ACS_TO_NUMBER` or `TARGET_PHONE_NUMBER`      | Default callee phone number                   | `+18005555678`                                          |
-| `VL_WS_URL` or `AI_FOUNDRY_ENDPOINT`          | **Azure AI Voice Live** WebSocket endpoint    | `wss://<resource>.openai.azure.com/openai/realtime?...` |
-| `VL_API_KEY` or `AI_FOUNDRY_API_KEY`          | Azure OpenAI API key                          | `***`                                                   |
-| `VOICE_LIVE_MODEL`                            | Voice Live model deployment name              | `gpt-4o-realtime-preview`                               |
-| `VL_VOICE` or `DEFAULT_VOICE`                 | Default TTS voice                             | `verse` or `en-US-AvaNeural`                            |
-| `MEDIA_CHANNEL`                               | `MIXED` or `UNMIXED`                          | `MIXED`                                                 |
-| `MEDIA_BIDIRECTIONAL`                         | Enable both directions                        | `true`                                                  |
-| `MEDIA_OUT_FORMAT`                            | Single outbound format for stability          | `json_simple`                                           |
-| `MEDIA_VL_INPUT_MIN_MS`                       | Minimum buffered milliseconds before commit   | `180`                                                   |
-| `MEDIA_MIN_MARGIN_MS`                         | Safety margin above model minimum             | `40`                                                    |
-| `REGION_HINT`                                 | Co locate app and model to reduce jitter      | `virginia`                                              |
+1.  **`.env`**: Contains settings **exclusively for deployment to Azure**. This file should contain all the necessary secrets and configuration that the live application will use. It is read by the `scripts/deploy.sh` script.
+2.  **`.env.local`**: For **local development overrides**. Variables in this file will take precedence over those in `.env` when running the application locally. This is the place for your `ngrok` URL, local logging settings, etc.
+3.  **`.env.notebook`**: Contains settings **specific to the Jupyter notebook** (`notebook/notebook.ipynb`), such as the Azure OpenAI credentials for generating `CALL_BRIEF` summaries.
 
-For advanced options see `ENV.md` if present.
+**Setup:**
+
+1.  Copy `.env.sample` to a new file named `.env` and fill in the values for your Azure deployment.
+2.  Create a `.env.local` file for your local overrides.
+3.  Create a `.env.notebook` file for your notebook credentials.
+
+> **Security Note:** The `.gitignore` file is configured to ignore `.env`, `.env.local`, and `.env.notebook`, so your secrets will not be committed to source control.
+
+### Key Variables
+
+| Variable                  | Description                                                                   | Found In                               |
+| ------------------------- | ----------------------------------------------------------------------------- | -------------------------------------- |
+| `APP_BASE_URL`            | Public base URL of your app (e.g., ngrok URL for local, Azure URL for prod).  | `.env.local` (local), set by script (prod) |
+| `ACS_CONNECTION_STRING`   | Your full Azure Communication Services connection string.                     | `.env`                                 |
+| `ACS_OUTBOUND_CALLER_ID`  | The E.164 phone number to use as the caller ID.                               | `.env`                                 |
+| `TARGET_PHONE_NUMBER`     | The default phone number to call.                                             | `.env`                                 |
+| `AI_FOUNDRY_ENDPOINT`     | The WebSocket endpoint for the Azure AI Voice Live service.                   | `.env`                                 |
+| `AI_FOUNDRY_API_KEY`      | The API key for the Azure AI service.                                         | `.env`                                 |
+| `VOICE_LIVE_MODEL`        | The specific real-time model deployment to use.                               | `.env`                                 |
+| `DEFAULT_VOICE`           | The default TTS voice for the agent.                                          | `.env`                                 |
+| `LOG_LEVEL`               | Logging level for local development (`DEBUG`, `INFO`, etc.).                  | `.env.local`                           |
+| `AZURE_OPENAI_ENDPOINT`   | Endpoint for the Azure OpenAI resource used by the notebook.                  | `.env.notebook`                        |
+| `AZURE_OPENAI_KEY`        | API key for the Azure OpenAI resource used by the notebook.                   | `.env.notebook`                        |
+| `AZURE_OPENAI_DEPLOYMENT_NAME` | The chat model deployment used by the notebook.                          | `.env.notebook`                        |
+
+For a complete list of all advanced tuning variables, see `ENV.md`.
 
 ---
 

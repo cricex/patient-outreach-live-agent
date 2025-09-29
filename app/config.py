@@ -5,7 +5,10 @@ from pydantic import BaseModel, field_validator
 from typing import Optional
 from dotenv import load_dotenv
 
+# Load default environment variables for deployment
 load_dotenv()
+# Load local environment variables, overriding the default ones for local development
+load_dotenv(dotenv_path=".env.local", override=True)
 
 class Settings(BaseModel):
     """Strongly typed configuration for the FastAPI voice call service."""
@@ -36,8 +39,8 @@ class Settings(BaseModel):
     media_audio_channel_type: str = "mixed"  # mixed | unmixed
     media_enable_voicelive_in: bool = True
     media_vl_in_commit_every: int = 1
-    media_vl_in_start_frames: int = 50      # minimum non-silent frames before starting bridge
-    media_vl_in_start_rms: int = 200        # minimum rolling RMS average before starting bridge
+    media_vl_in_start_frames: int = 10      # minimum non-silent frames before starting bridge (~200ms)
+    media_vl_in_start_rms: int = 60         # minimum rolling RMS average before starting bridge
     media_out_format: str = "multi"  # json_simple | json_wrapped | binary | multi (tries several)
     media_out_max_queue_frames: int = 10
     vl_input_min_ms: int = 160  # raised default minimum ms buffered before commit to model (was 120)
@@ -46,6 +49,8 @@ class Settings(BaseModel):
     voice_live_force_output_rate: int | None = None  # optional override for model output assumed rate
     # --- Added VAD / latency control fields (centralizing previously scattered env vars) ---
     vl_dynamic_rms_offset: int = 300               # base additive offset above noise floor after bootstrap
+    vl_dynamic_rms_min: int = 40                   # minimum adaptive RMS threshold floor
+    vl_dynamic_rms_max: int = 1600                 # maximum adaptive RMS threshold ceiling
     vl_min_speech_frames: int = 5                  # minimum speech frames (~20ms each) required for commit (steady-state)
     vl_max_buffer_ms: int = 2000                   # safety cap before forced commit
     vl_bootstrap_duration_ms: int = 2000           # window using lowered offset to detect first speech quickly
@@ -58,6 +63,18 @@ class Settings(BaseModel):
     vl_barge_in_enabled: bool = True               # enable barge-in detection when agent is speaking
     vl_barge_in_offset: int = 40                   # additive offset used for barge-in detection (lower than normal)
     vl_barge_in_consecutive_frames: int = 3        # frames above barge-in threshold to trigger interruption
+    # Enhanced barge-in tuning (new)
+    vl_barge_in_min_agent_ms: int = 800            # minimum agent speech ms before barge-in allowed
+    vl_barge_in_min_user_ms: int = 160             # minimum continuous user speech ms to qualify
+    vl_barge_in_relative_factor: float = 1.3       # require rms >= factor * noise_floor (in addition to offset)
+    vl_barge_in_cooldown_ms: int = 1200            # cooldown after a barge-in before another can trigger
+    vl_barge_in_release_frames: int = 6            # hysteresis: frames below lower threshold to re-arm
+    # Further barge-in hardening (new)
+    vl_barge_in_lock_ms: int = 1200                # hard lock window after agent starts where barge-in cannot begin tracking
+    vl_barge_in_min_snr_db: int = 10               # minimum SNR (dB) above noise baseline for candidate
+    vl_barge_in_abs_min_rms: int = 100             # absolute RMS floor to qualify (filters faint echo)
+    # Commit gating: enforce minimum user speech duration before we allow a phrase commit (except hard safeties)
+    vl_commit_min_user_ms: int = 600               # 0 disables; prevents agent from replying mid-utterance
     vl_log_first_commit: bool = True               # emit structured first-commit timing log
 
     @field_validator("app_base_url", "acs_connection_string", "acs_outbound_caller_id", "default_system_prompt")
@@ -111,13 +128,13 @@ class Settings(BaseModel):
             media_wav_path=os.getenv("MEDIA_WAV_PATH", "media_capture.wav"),
             media_frame_bytes=int(os.getenv("MEDIA_FRAME_BYTES", "640")),
             media_frame_interval_ms=int(os.getenv("MEDIA_FRAME_INTERVAL_MS", "20")),
-            media_enable_voicelive_out=os.getenv("MEDIA_ENABLE_VL_OUT", "true").lower() == "true",
+            media_enable_voicelive_out=os.getenv("MEDIA_ENABLE_VL_OUT", os.getenv("MEDIA_ENABLE_VOICELIVE_OUT", "true")).lower() == "true",
             media_log_all_text_frames=os.getenv("MEDIA_LOG_ALL_TEXT_FRAMES", "false").lower() == "true",
             media_audio_channel_type=os.getenv("MEDIA_AUDIO_CHANNEL_TYPE", "mixed").lower(),
-            media_enable_voicelive_in=os.getenv("MEDIA_ENABLE_VL_IN", "true").lower() == "true",
+            media_enable_voicelive_in=os.getenv("MEDIA_ENABLE_VL_IN", os.getenv("MEDIA_ENABLE_VOICELIVE_IN", "true")).lower() == "true",
             media_vl_in_commit_every=int(os.getenv("MEDIA_VL_IN_COMMIT_EVERY", "1")),
-            media_vl_in_start_frames=int(os.getenv("MEDIA_VL_IN_START_FRAMES", "50")),
-            media_vl_in_start_rms=int(os.getenv("MEDIA_VL_IN_START_RMS", "200")),
+            media_vl_in_start_frames=int(os.getenv("MEDIA_VL_IN_START_FRAMES", "10")),
+            media_vl_in_start_rms=int(os.getenv("MEDIA_VL_IN_START_RMS", "60")),
             media_out_format=os.getenv("MEDIA_OUT_FORMAT", "multi").lower(),
             media_out_max_queue_frames=int(os.getenv("MEDIA_OUT_MAX_QUEUE_FRAMES", "10")),
             vl_input_min_ms=int(os.getenv("VL_INPUT_MIN_MS", os.getenv("MEDIA_VL_INPUT_MIN_MS", "160"))),
@@ -126,6 +143,8 @@ class Settings(BaseModel):
             voice_live_force_output_rate=(int(os.getenv("VOICE_LIVE_FORCE_OUTPUT_RATE")) if os.getenv("VOICE_LIVE_FORCE_OUTPUT_RATE") else None),
             # New VAD / barge-in settings (fallback to existing env vars if set)
             vl_dynamic_rms_offset=int(os.getenv("VL_DYNAMIC_RMS_OFFSET", os.getenv("VL_DYNAMIC_RMS_OFFSET_STEADY", "300"))),
+            vl_dynamic_rms_min=int(os.getenv("VL_DYNAMIC_RMS_MIN", "40")),
+            vl_dynamic_rms_max=int(os.getenv("VL_DYNAMIC_RMS_MAX", "1600")),
             vl_min_speech_frames=int(os.getenv("VL_MIN_SPEECH_FRAMES", "5")),
             vl_max_buffer_ms=int(os.getenv("VL_MAX_BUFFER_MS", "2000")),
             vl_bootstrap_duration_ms=int(os.getenv("VL_BOOTSTRAP_DURATION_MS", "2000")),
@@ -138,6 +157,15 @@ class Settings(BaseModel):
             vl_barge_in_enabled=os.getenv("VL_BARGE_IN_ENABLED", "true").lower() == "true",
             vl_barge_in_offset=int(os.getenv("VL_BARGE_IN_OFFSET", "40")),
             vl_barge_in_consecutive_frames=int(os.getenv("VL_BARGE_IN_CONSECUTIVE_FRAMES", "3")),
+            vl_barge_in_min_agent_ms=int(os.getenv("VL_BARGE_IN_MIN_AGENT_MS", "800")),
+            vl_barge_in_min_user_ms=int(os.getenv("VL_BARGE_IN_MIN_USER_MS", "160")),
+            vl_barge_in_relative_factor=float(os.getenv("VL_BARGE_IN_RELATIVE_FACTOR", "1.3")),
+            vl_barge_in_cooldown_ms=int(os.getenv("VL_BARGE_IN_COOLDOWN_MS", "1200")),
+            vl_barge_in_release_frames=int(os.getenv("VL_BARGE_IN_RELEASE_FRAMES", "6")),
+            vl_barge_in_lock_ms=int(os.getenv("VL_BARGE_IN_LOCK_MS", "1200")),
+            vl_barge_in_min_snr_db=int(os.getenv("VL_BARGE_IN_MIN_SNR_DB", "10")),
+            vl_barge_in_abs_min_rms=int(os.getenv("VL_BARGE_IN_ABS_MIN_RMS", "100")),
+            vl_commit_min_user_ms=int(os.getenv("VL_COMMIT_MIN_USER_MS", "600")),
             vl_log_first_commit=os.getenv("VL_LOG_FIRST_COMMIT", "true").lower() == "true",
         )
 

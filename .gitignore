@@ -5,10 +5,15 @@ __pycache__/
 
 # Environment variables - DO NOT COMMIT SECRETS
 .env
-.env.*
+.env.local
+.env.notebook
 .venv
 env/
 venv/
+
+# Deployment artifacts
+tmp_deploy/
+deployment.zip
 
 # Node.js dependencies
 /node_modules/

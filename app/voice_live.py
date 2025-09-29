@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import uuid
+import math
 from typing import Callable, Optional, List, Awaitable
 
 try:  # optional (some slim builds may omit audioop)
@@ -78,8 +79,8 @@ class VoiceLiveSession:
         from .config import settings as _cfg_vad
         # Centralized VAD + commit tuning (bootstrap + steady state)
         self._dynamic_rms_offset = _cfg_vad.vl_dynamic_rms_offset  # steady-state additive offset
-        self._dynamic_rms_min = int(os.getenv("VL_DYNAMIC_RMS_MIN", "120"))
-        self._dynamic_rms_max = int(os.getenv("VL_DYNAMIC_RMS_MAX", "1600"))
+        self._dynamic_rms_min = int(os.getenv("VL_DYNAMIC_RMS_MIN", str(_cfg_vad.vl_dynamic_rms_min)))
+        self._dynamic_rms_max = int(os.getenv("VL_DYNAMIC_RMS_MAX", str(_cfg_vad.vl_dynamic_rms_max)))
         self._min_speech_frames_for_commit = _cfg_vad.vl_min_speech_frames  # steady-state requirement
         self._max_buffer_commit_ms = _cfg_vad.vl_max_buffer_ms
         # Bootstrap phase – lower thresholds to capture first utterance rapidly
@@ -109,6 +110,11 @@ class VoiceLiveSession:
         self._barge_in_consecutive = _cfg_vad.vl_barge_in_consecutive_frames
         self._barge_in_frames = 0
         self._barge_in_triggered = False
+        # Enhanced barge-in gating (added)
+        self._barge_in_candidate_start_ms: float | None = None
+        self._barge_in_last_trigger_ms: float = 0.0
+        self._barge_in_release_counter: int = 0
+        self._agent_burst_start_ms: float | None = None
         # First commit timing metrics
         self._first_audio_monotonic = None
         self._first_commit_monotonic = None
@@ -141,6 +147,8 @@ class VoiceLiveSession:
         from .config import settings as _settings_init
         self._adaptive_min_ms = _settings_init.vl_input_min_ms
         self._safety_ms = _settings_init.vl_input_safety_ms
+        # Minimum user speech duration (ms) required before permitting a normal silence commit
+        self._commit_min_user_ms = _settings_init.vl_commit_min_user_ms
         self._threshold_frames = 0
         self._recompute_threshold(force=True)
         self._accum_started_monotonic = None
@@ -285,9 +293,8 @@ class VoiceLiveSession:
                 logger.debug("VL-IN waiting for session.updated before sending input audio")
                 self._waiting_for_format_logged = True
             return
-        if len(pcm_frame) != self._seg_frame_bytes:
-            # Enforce expected 20ms size; skip otherwise
-            return
+            if len(pcm_frame) != self._seg_frame_bytes:  # Enforce expected 20ms size; skip otherwise
+                return
         # NEW: If we're currently awaiting a commit acknowledgement, buffer (stage) this frame locally
         # instead of sending it immediately. Previously we still sent frames, causing the service-side
         # buffer (which had just been committed/reset) to appear empty when the commit arrived, yielding
@@ -485,48 +492,144 @@ class VoiceLiveSession:
             elif self._had_speech_since_last_commit and self._in_frames_since_commit > 0:
                 self._silence_after_speech_ms += frame_ms_effective
 
-            # Barge-in detection: user interrupts agent speech
-            if self._barge_in_enabled and (self._response_active or self._current_burst_active) and not self._barge_in_triggered:
-                if 'rms' in locals():
-                    # Approximate noise floor: current_dynamic_threshold - steady offset (best-effort)
-                    approx_noise = None
-                    if self._current_dynamic_threshold is not None:
-                        approx_noise = max(1, self._current_dynamic_threshold - self._dynamic_rms_offset)
-                    if approx_noise is None:
-                        approx_noise = 50
-                    barge_thresh = max(20, approx_noise + self._barge_in_offset)
-                    if rms >= barge_thresh:
-                        self._barge_in_frames += 1
-                    else:
-                        if self._barge_in_frames:
+            # Enhanced barge-in detection (multi-factor) -----------------------------------------------------
+            # Conditions required:
+            # 1. Agent currently speaking (burst active) and feature enabled.
+            # 2. Agent has spoken at least vl_barge_in_min_agent_ms (grace period) since burst start.
+            # 3. User speech candidate sustained >= vl_barge_in_min_user_ms of frames above barge threshold.
+            # 4. User RMS must exceed both absolute (noise + offset) AND relative (factor * noise) criteria.
+            # 5. Cooldown since last trigger satisfied.
+            # 6. Hysteresis: once candidate falls below a lower release threshold for N frames, reset candidate.
+            if self._barge_in_enabled and (self._response_active or self._current_burst_active):
+                if 'rms' in locals() and self._current_dynamic_threshold is not None:
+                    from .config import settings as _cfg_bi
+                    loop_now_ms_full = asyncio.get_event_loop().time() * 1000.0
+                    # Establish agent burst start time if missing
+                    if self._agent_burst_start_ms is None and (self._response_active or self._current_burst_active):
+                        self._agent_burst_start_ms = loop_now_ms_full
+                    agent_elapsed_ms = 0.0
+                    if self._agent_burst_start_ms is not None:
+                        agent_elapsed_ms = loop_now_ms_full - self._agent_burst_start_ms
+                    # Hard lock window: do not even accumulate candidate within lock period
+                    if agent_elapsed_ms < _cfg_bi.vl_barge_in_lock_ms:
+                        if self._barge_in_candidate_start_ms is not None:
+                            # reset any partial candidate formed before realizing lock window
+                            self._barge_in_candidate_start_ms = None
                             self._barge_in_frames = 0
-                    if self._barge_in_frames >= self._barge_in_consecutive:
+                            self._barge_in_release_counter = 0
+                        # Skip rest of barge-in logic during hard lock
+                        pass_lock = True
+                    else:
+                        pass_lock = False
+                    # Approximate noise baseline
+                    approx_noise = max(1, self._current_dynamic_threshold - self._dynamic_rms_offset)
+                    abs_thresh = max(20, approx_noise + self._barge_in_offset)
+                    rel_thresh = approx_noise * _cfg_bi.vl_barge_in_relative_factor
+                    effective_thresh = max(abs_thresh, rel_thresh)
+                    # Compute SNR (dB) using noise baseline
+                    snr_db = 0.0
+                    if approx_noise > 0:
+                        snr_db = 20.0 * math.log10(max(rms, 1) / approx_noise)
+                    below_release_thresh = rms < (effective_thresh * 0.65)  # release hysteresis
+                    cooldown_ok = (loop_now_ms_full - self._barge_in_last_trigger_ms) >= _cfg_bi.vl_barge_in_cooldown_ms
+                    grace_ok = agent_elapsed_ms >= _cfg_bi.vl_barge_in_min_agent_ms
+                    # Candidate tracking
+                    if (not pass_lock
+                        and rms >= effective_thresh
+                        and grace_ok and cooldown_ok
+                        and snr_db >= _cfg_bi.vl_barge_in_min_snr_db
+                        and rms >= _cfg_bi.vl_barge_in_abs_min_rms):
+                        if self._barge_in_candidate_start_ms is None:
+                            self._barge_in_candidate_start_ms = loop_now_ms_full
+                            self._barge_in_frames = 1
+                        else:
+                            self._barge_in_frames += 1
+                    else:
+                        # Hysteresis release handling
+                        if self._barge_in_candidate_start_ms is not None:
+                            if below_release_thresh:
+                                self._barge_in_release_counter += 1
+                                if self._barge_in_release_counter >= _cfg_bi.vl_barge_in_release_frames:
+                                    logger.debug(
+                                        "VL-BARGE-RESET reason=release frames=%d rms=%d eff_thresh=%.1f noise=%d", 
+                                        self._barge_in_release_counter, rms, effective_thresh, approx_noise
+                                    )
+                                    self._barge_in_candidate_start_ms = None
+                                    self._barge_in_frames = 0
+                                    self._barge_in_release_counter = 0
+                            else:
+                                # Still near threshold; don't yet reset, but decay release counter
+                                if self._barge_in_release_counter > 0:
+                                    self._barge_in_release_counter = max(0, self._barge_in_release_counter - 1)
+                        else:
+                            self._barge_in_frames = 0
+                    user_ms = 0.0
+                    if self._barge_in_candidate_start_ms is not None:
+                        user_ms = loop_now_ms_full - self._barge_in_candidate_start_ms
+                    # Periodic evaluation logging (every 200ms while candidate active or every ~1s idle)
+                    if logger.isEnabledFor(logging.DEBUG):
+                        if (self._barge_in_candidate_start_ms and self._barge_in_frames % 5 == 0) or (self._in_frame_counter % 50 == 0):
+                            logger.debug(
+                                "VL-BARGE-EVAL rms=%d noise=%d abs=%.1f rel=%.1f eff=%.1f snr_db=%.1f user_ms=%.1f agent_ms=%.1f frames=%d grace=%s cooldown=%s lock=%s candidate=%s release_frames=%d", 
+                                rms, approx_noise, abs_thresh, rel_thresh, effective_thresh, snr_db, user_ms, agent_elapsed_ms, self._barge_in_frames, 
+                                grace_ok, cooldown_ok, agent_elapsed_ms < _cfg_bi.vl_barge_in_lock_ms, self._barge_in_candidate_start_ms is not None, self._barge_in_release_counter
+                            )
+                    trigger_ready = (
+                        self._barge_in_candidate_start_ms is not None
+                        and user_ms >= _cfg_bi.vl_barge_in_min_user_ms
+                        and grace_ok and cooldown_ok
+                        and snr_db >= _cfg_bi.vl_barge_in_min_snr_db
+                        and rms >= _cfg_bi.vl_barge_in_abs_min_rms
+                    )
+                    if trigger_ready and not self._barge_in_triggered:
                         self._barge_in_triggered = True
+                        self._barge_in_last_trigger_ms = loop_now_ms_full
                         self._response_active = False
                         self._current_burst_active = False
-                        # Drop any pending outbound frames
                         dropped = 0
                         try:
                             while not self._seg_queue.empty():
                                 _ = self._seg_queue.get_nowait(); dropped += 1
                         except Exception:
                             pass
-                        logger.info("VL-BARGE-IN triggered frames=%d dropped_out_frames=%d", self._barge_in_frames, dropped)
+                        logger.info(
+                            "VL-BARGE-IN TRIGGER rms=%d noise=%d eff=%.1f snr_db=%.1f user_ms=%.1f agent_ms=%.1f frames=%d dropped_out_frames=%d", 
+                            rms, approx_noise, effective_thresh, snr_db, user_ms, agent_elapsed_ms, self._barge_in_frames, dropped
+                        )
+                        # Commit immediately if we have enough local speech frames buffered
                         if self._commit_accum_speech_frames >= max(self._bootstrap_min_frames, self._min_speech_frames_for_commit):
                             await self._commit_now("barge_in")
+                        # Reset candidate after trigger so new speech requires fresh buildup
+                        self._barge_in_candidate_start_ms = None
+                        self._barge_in_frames = 0
+                        self._barge_in_release_counter = 0
 
             commit_now = False
             trigger = ""
 
             # (A) Max-buffer safety first
             if self._in_frames_since_commit > 0 and self._in_ms_since_commit >= self._max_buffer_commit_ms:
-                commit_now = True
-                trigger = "max_buffer_safety"
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(
-                        "VL-IN max_buffer_safety triggered: ms_since_commit=%.1f awaiting_ack=%s cooldown=%d", 
-                        self._in_ms_since_commit, self._awaiting_commit_ack, self._commit_cooldown_frames
-                    )
+                # ADDED: Only trigger safety commit if there's actual speech to send
+                if self._commit_accum_speech_frames > 0:
+                    commit_now = True
+                    trigger = "max_buffer_safety"
+                    if logger.isEnabledFor(logging.DEBUG):
+                        logger.debug(
+                            "VL-IN max_buffer_safety triggered: ms_since_commit=%.1f awaiting_ack=%s cooldown=%d speech_frames=%d",
+                            self._in_ms_since_commit, self._awaiting_commit_ack, self._commit_cooldown_frames, self._commit_accum_speech_frames
+                        )
+                else:
+                    # If it's all silence, just clear the buffer and reset timing
+                    self._in_frames_since_commit = 0
+                    self._in_ms_since_commit = 0.0
+                    self._accum_started_monotonic = None
+                    self._commit_accum_audio_bytes = 0
+                    self._commit_accum_speech_frames = 0
+                    self._commit_accum_rms_sum = 0
+                    self._commit_accum_rms_count = 0
+                    self._commit_accum_rms_peak = 0
+                    logger.debug("VL-IN max_buffer_safety skipped (no speech), buffer cleared")
+
 
             # (A2) No-speech timeout / prolonged low-speech starvation safeguard.
             # Fires when buffer age exceeds threshold AND either no speech at all OR repeated low-speech blocks.
@@ -596,7 +699,21 @@ class VoiceLiveSession:
                             )
 
             if commit_now:
-                await self._commit_now(trigger)
+                # Additional gating: require minimum accumulated user speech for certain triggers
+                if self._commit_min_user_ms > 0 and trigger in ("silence_after_speech",):
+                    speech_ms = self._commit_accum_speech_frames * frame_ms_effective
+                    if speech_ms < self._commit_min_user_ms:
+                        if logger.isEnabledFor(logging.DEBUG):
+                            logger.debug(
+                                "VL-IN commit blocked min_user_ms speech_ms=%.1f required=%d trigger=%s frames=%d ms_buf=%.1f", 
+                                speech_ms, self._commit_min_user_ms, trigger, self._commit_accum_speech_frames, self._in_ms_since_commit
+                            )
+                        # Treat as ongoing speech; reset silence timer so we wait for true pause
+                        if trigger == "silence_after_speech":
+                            self._silence_after_speech_ms = 0.0
+                        commit_now = False
+                if commit_now:
+                    await self._commit_now(trigger)
 
         except Exception as e:
             logger.debug("VOICE-LIVE send_input_audio_frame error: %s", e)
@@ -609,15 +726,17 @@ class VoiceLiveSession:
                            trigger, self._awaiting_commit_ack, self._commit_cooldown_frames, 
                            self._in_frames_since_commit, self._in_ms_since_commit)
             return
-        # If zero speech frames accumulated (and not forced by max buffer or no_speech timeout), block commit
-        if trigger not in ("max_buffer_safety", "no_speech_timeout") and self._commit_accum_speech_frames == 0:
+        # UNIVERSAL GUARD: If zero speech frames have been detected in this buffer, block the commit
+        # unless it's a timeout-related trigger, which is meant to flush the buffer regardless.
+        if self._commit_accum_speech_frames == 0 and trigger not in ("max_buffer_safety", "no_speech_timeout", "low_speech_escalation"):
             try:
                 app_state.media_commit_block("no_speech")
             except Exception:
                 pass
             if logger.isEnabledFor(logging.DEBUG):
-                logger.debug("VL-IN commit blocked: no_speech trigger=%s ms_buf=%.1f", trigger, self._in_ms_since_commit)
+                logger.debug("VL-IN commit blocked (universal guard): no_speech trigger=%s ms_buf=%.1f", trigger, self._in_ms_since_commit)
             return
+        
         await self._ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
         self._last_commit_ms = asyncio.get_event_loop().time() * 1000.0
         effective_ms = int(self._in_ms_since_commit)
@@ -809,18 +928,31 @@ class VoiceLiveSession:
                                             pcm = converted
                                         except Exception as e:
                                             logger.warning("resample_failed rate=%s->%s err=%s", rate, self._target_rate, e)
-                                await self._enqueue_pcm(pcm)
+                                            # On failure, do not enqueue the original (likely corrupt) frame.
+                                            # The buffer is better off missing a tiny fragment than being corrupted.
+                                            pcm = None
+                                if pcm:
+                                    await self._enqueue_pcm(pcm)
                             except Exception as r_err:
                                 logger.debug("VOICE-LIVE resample error: %s", r_err)
                     # Track response lifecycle
                     if 'response.audio.delta' in lowered or 'response.content_part.added' in lowered or 'response.output_item.added' in lowered:
                         self._response_active = True
                         self._current_burst_active = True
+                        # Mark the start of a new agent burst (used for barge-in grace timing)
+                        if self._agent_burst_start_ms is None:
+                            self._agent_burst_start_ms = asyncio.get_event_loop().time() * 1000.0
                     if 'response.audio.done' in lowered or 'response.done' in lowered:
                         self._current_burst_active = False
                         logger.debug("VL-OUT audio response completed, final queue_size=%d buffer_bytes=%d", 
                                    self._seg_queue.qsize(), len(self._seg_buffer))
                         self._response_active = False
+                        # Reset agent burst timing & barge-in state for next response
+                        self._agent_burst_start_ms = None
+                        self._barge_in_triggered = False
+                        self._barge_in_candidate_start_ms = None
+                        self._barge_in_frames = 0
+                        self._barge_in_release_counter = 0
                     try:
                         result = on_event(data)
                         if asyncio.iscoroutine(result):
