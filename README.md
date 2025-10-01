@@ -1,5 +1,5 @@
 # Preventive Care Gap Closure: Real time Voice Outreach (PoC)
-> **Note:** This proof of concept was developed on the Public Preview version of Azure Voice Live API. As of today (2025/10/01), [Voice Live is now Generally Available](https://aka.ms/VoiceLiveGA). I will be refactoring the repo shortly to update with GA features and capabilities shortly. 
+> **Note:** This proof of concept was developed on the Public Preview version of Azure Voice Live API. As of today (2025/10/01), [Voice Live is now Generally Available](https://aka.ms/VoiceLiveGA). I will be refactoring the repo shortly to update with GA features and capabilities. 
 
 > **Purpose:** Demonstrate an end to end voice pipeline that identifies patients due for preventive screenings from synthetic EHR like data, generates a concise reason for outreach, and calls them to book an appointment using Azure Communication Services, Azure AI Voice Live service, and Azure OpenAI realtime models for low latency, multilingual speech to speech.
 
