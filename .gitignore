@@ -1,7 +1,9 @@
 # Python cache & compiled files
 __pycache__/
+app/__pycache__/
 *.py[cod]
 *.so
+*.pyc
 
 # Environment variables - DO NOT COMMIT SECRETS
 .env
