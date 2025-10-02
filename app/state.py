@@ -147,13 +147,18 @@ class AppState:
             self.last_event_at = time.time()
 
     # Voice Live session tracking
-    def begin_voicelive(self, session_id: str, model: str, voice: str):
-        """Persist metadata for a new Voice Live session when the bridge comes online."""
+    def begin_voicelive(self, session_id: str, voice: str, *, model: str | None = None):
+        """Persist metadata for a new Voice Live session (GA Speech only).
+
+        'model' retained as optional keyword for backward compatibility; GA path
+        does not differentiate model variants, so it may be None.
+        """
         with self._lock:
             now = time.time()
             self.voicelive_session = {
                 "session_id": session_id,
-                "model": model,
+                # Keep field only if provided to avoid breaking existing status parsers.
+                **({"model": model} if model else {}),
                 "voice": voice,
                 "started_at": now,
                 "active": True,
@@ -194,10 +199,9 @@ class AppState:
             else:
                 snap["duration_sec"] = round(time.time() - started, 3)
         # Do not expose internal lists beyond first events
-        return {
+        result = {
             "active": snap.get("active", False),
             "session_id": snap.get("session_id"),
-            "model": snap.get("model"),
             "voice": snap.get("voice"),
             "output_hz": snap.get("output_hz"),
             "input_hz": snap.get("input_hz"),
@@ -206,6 +210,9 @@ class AppState:
             "event_types": snap.get("event_types", []),
             "end_reason": snap.get("end_reason"),
         }
+        if snap.get("model") is not None:
+            result["model"] = snap.get("model")
+        return result
 
     def _augment_with_duration(self, call: Optional[Dict[str, Any]]):
         if not call:

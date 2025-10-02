@@ -24,7 +24,7 @@ from .config import settings
 import logging
 import asyncio
 import time
-from .voice_live import VoiceLiveSession, run_receive
+from .voice_live_ga import VoiceLiveSessionGA  # GA implementation
 import base64, json as _json
 import os
 from logging.handlers import RotatingFileHandler
@@ -108,7 +108,7 @@ for noisy in ["websockets.client", "websockets.protocol"]:
 
 app = FastAPI(title="Voice Call PoC", version="0.1.0")
 
-_voice_live_session: VoiceLiveSession | None = None
+_voice_live_session: VoiceLiveSessionGA | None = None
 _voice_live_pacer_task: asyncio.Task | None = None
 _active_media_sockets: set[WebSocket] = set()
 
@@ -396,25 +396,21 @@ async def call_events(request: Request) -> Dict[str, Any]:
             # Voice Live only if enabled
             if settings.enable_voice_live and (not _voice_live_session or not _voice_live_session.active):
                 try:
-                    logger.info("VL-MAIN: Attempting to start Voice Live session...")
-                    _voice_live_session = VoiceLiveSession(settings.ai_foundry_endpoint, settings.ai_foundry_api_key)
-                    logger.info("VL-MAIN: VoiceLiveSession instantiated. Connecting...")
+                    logger.info("VL-MAIN: Starting GA Voice Live session...")
+                    # GA-only session (preview endpoint/api_key removed)
+                    _voice_live_session = VoiceLiveSessionGA()
+                    logger.info("VL-MAIN: GA VoiceLiveSession instantiated. Connecting...")
                     prompt = app_state.get_call_prompt(call_connection_id) or settings.default_system_prompt
                     import os as _os
                     runtime_default_voice = _os.getenv("DEFAULT_VOICE", settings.default_voice)
                     
                     # Add a specific timeout for the connection attempt
-                    connect_task = _voice_live_session.connect(settings.voice_live_model, runtime_default_voice, prompt)
+                    # Model identifier deprecated – pass None (state will record placeholder)
+                    connect_task = _voice_live_session.connect(None, runtime_default_voice, prompt)
                     await asyncio.wait_for(connect_task, timeout=15.0)
                     
                     logger.info("VL-MAIN: Voice Live connection successful.")
-                    app_state.begin_voicelive(_voice_live_session.session_id, settings.voice_live_model, _voice_live_session.voice or runtime_default_voice)
-                    # Launch receive loop
-                    async def _on_vl_event(evt: dict):
-                        et = evt.get("type")
-                        if et:
-                            app_state.voicelive_add_event_type(et)
-                    asyncio.create_task(run_receive(_voice_live_session, _on_vl_event))
+                    app_state.begin_voicelive(_voice_live_session.session_id, _voice_live_session.voice or runtime_default_voice, model=None)
                     # Launch outbound pacing task (segments Voice Live PCM deltas into fixed frames)
                     if settings.media_enable_voicelive_out:
                         async def _pacer():
@@ -698,10 +694,7 @@ async def media_ws(ws: WebSocket, token: str):
                                         if len(frame_slice) < AUDIO_CHUNK_SIZE:
                                             break
                                         try:
-                                            is_speech = app_state.media_process_audio_frame(frame_slice)
-                                            global _voice_live_session
-                                            if is_speech and _voice_live_session:
-                                                _voice_live_session._speech_detected = True
+                                            _ = app_state.media_process_audio_frame(frame_slice)
                                             # Conditional bridging to Voice Live (inbound -> model)
                                             from .config import settings as _settings
                                             if (
