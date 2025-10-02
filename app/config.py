@@ -21,9 +21,6 @@ class Settings(BaseModel):
     call_timeout_sec: int = 90
     call_idle_timeout_sec: int = 90
     enable_voice_live: bool = True
-    ai_foundry_endpoint: Optional[str] = None
-    ai_foundry_api_key: Optional[str] = None
-    voice_live_model: Optional[str] = None
     default_voice: Optional[str] = None
     media_bidirectional: bool = True
     media_start_at_create: bool = False
@@ -76,6 +73,10 @@ class Settings(BaseModel):
     # Commit gating: enforce minimum user speech duration before we allow a phrase commit (except hard safeties)
     vl_commit_min_user_ms: int = 600               # 0 disables; prevents agent from replying mid-utterance
     vl_log_first_commit: bool = True               # emit structured first-commit timing log
+    # Implementation selector: 'preview' (current websocket) | 'ga' (new SDK)
+    # GA Speech credentials
+    speech_key: str | None = None
+    speech_region: str | None = None
 
     @field_validator("app_base_url", "acs_connection_string", "acs_outbound_caller_id", "default_system_prompt")
     @classmethod
@@ -115,9 +116,6 @@ class Settings(BaseModel):
             call_timeout_sec=int(os.getenv("CALL_TIMEOUT_SEC", "90")),
             call_idle_timeout_sec=int(os.getenv("CALL_IDLE_TIMEOUT_SEC", os.getenv("CALL_TIMEOUT_SEC", "90"))),
             enable_voice_live=os.getenv("ENABLE_VOICE_LIVE", "true").lower() == "true",
-            ai_foundry_endpoint=os.getenv("AI_FOUNDRY_ENDPOINT"),
-            ai_foundry_api_key=os.getenv("AI_FOUNDRY_API_KEY"),
-            voice_live_model=os.getenv("VOICE_LIVE_MODEL"),
             default_voice=os.getenv("DEFAULT_VOICE"),
             media_bidirectional=os.getenv("MEDIA_BIDIRECTIONAL", "true").lower() == "true",
             media_start_at_create=os.getenv("MEDIA_START_AT_CREATE", "false").lower() == "true",
@@ -167,26 +165,29 @@ class Settings(BaseModel):
             vl_barge_in_abs_min_rms=int(os.getenv("VL_BARGE_IN_ABS_MIN_RMS", "100")),
             vl_commit_min_user_ms=int(os.getenv("VL_COMMIT_MIN_USER_MS", "600")),
             vl_log_first_commit=os.getenv("VL_LOG_FIRST_COMMIT", "true").lower() == "true",
+            speech_key=os.getenv("SPEECH_KEY"),
+            speech_region=os.getenv("SPEECH_REGION"),
         )
 
     def validate_voice_live(self):
         """Validate Voice Live related flags before the app starts serving traffic."""
         if self.enable_voice_live:
             missing = []
-            if not self.ai_foundry_endpoint:
-                missing.append("AI_FOUNDRY_ENDPOINT")
-            if not self.ai_foundry_api_key:
-                missing.append("AI_FOUNDRY_API_KEY")
-            if not self.voice_live_model:
-                missing.append("VOICE_LIVE_MODEL")
             if not self.default_voice:
                 missing.append("DEFAULT_VOICE")
+            if not self.speech_key:
+                missing.append("SPEECH_KEY")
+            if not self.speech_region:
+                missing.append("SPEECH_REGION")
             if missing:
-                raise ValueError(f"Voice Live enabled but missing required env: {', '.join(missing)}")
+                raise ValueError(f"Voice Live (GA) enabled but missing required env: {', '.join(missing)}")
         if self.media_token_mode not in {"opaque", "callid"}:
             raise ValueError("MEDIA_TOKEN_MODE must be 'opaque' or 'callid'")
         if self.media_audio_channel_type not in {"mixed", "unmixed"}:
             raise ValueError("MEDIA_AUDIO_CHANNEL_TYPE must be 'mixed' or 'unmixed'")
+        if self.enable_voice_live:
+            if not self.speech_key or not self.speech_region:
+                raise ValueError("GA Voice Live requires SPEECH_KEY and SPEECH_REGION to be set")
 
 
 settings = Settings.from_env()

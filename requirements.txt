@@ -10,5 +10,5 @@ httpx==0.28.1
 azure-communication-callautomation==1.5.0
 azure-core==1.35.1
 
-# Realtime WS client for Voice Live (use this if no official SDK)
-websockets==15.0.1
+# GA Voice Live (Azure Speech SDK)
+azure-cognitiveservices-speech==1.38.0

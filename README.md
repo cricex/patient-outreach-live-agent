@@ -1,5 +1,5 @@
 # Preventive Care Gap Closure: Real time Voice Outreach (PoC)
-> **Note:** This proof of concept was developed on the Public Preview version of Azure Voice Live API. As of today (2025/10/01), [Voice Live is now Generally Available](https://aka.ms/VoiceLiveGA). I will be refactoring the repo shortly to update with GA features and capabilities. 
+> **Note:** This project originally targeted the Public Preview of Azure Voice Live + Azure OpenAI realtime models. It has now been trimmed to a **GA-only Speech (Voice Live) implementation** (preview plumbing removed) as of 2025/10/01. See commit history for the migration path.
 
 > **Purpose:** Demonstrate an end to end voice pipeline that identifies patients due for preventive screenings from synthetic EHR like data, generates a concise reason for outreach, and calls them to book an appointment using Azure Communication Services, Azure AI Voice Live service, and Azure OpenAI realtime models for low latency, multilingual speech to speech.
 
@@ -119,7 +119,7 @@ Simulated EHR -> Gap Detector -> Patient Summary (CALL_BRIEF)
 * Python 3.10 or higher
 * Azure subscription
 * Azure Communication Services resource with an outbound phone number
-* Azure AI Foundry resource with **Azure AI Voice Live** and **Azure OpenAI realtime** deployments and an API key
+* Azure Speech resource with Voice Live GA enabled (SPEECH_KEY, SPEECH_REGION)
 * `ngrok` for a public HTTPS tunnel during local development
 
 ---
@@ -163,9 +163,8 @@ This project uses three separate environment files to manage configuration for d
 | `ACS_CONNECTION_STRING`   | Your full Azure Communication Services connection string.                     | `.env`                                 |
 | `ACS_OUTBOUND_CALLER_ID`  | The E.164 phone number to use as the caller ID.                               | `.env`                                 |
 | `TARGET_PHONE_NUMBER`     | The default phone number to call.                                             | `.env`                                 |
-| `AI_FOUNDRY_ENDPOINT`     | The WebSocket endpoint for the Azure AI Voice Live service.                   | `.env`                                 |
-| `AI_FOUNDRY_API_KEY`      | The API key for the Azure AI service.                                         | `.env`                                 |
-| `VOICE_LIVE_MODEL`        | The specific real-time model deployment to use.                               | `.env`                                 |
+| `SPEECH_KEY`              | Azure Speech subscription key (Voice Live GA).                                | `.env`                                 |
+| `SPEECH_REGION`           | Azure Speech region (e.g. `eastus`).                                          | `.env`                                 |
 | `DEFAULT_VOICE`           | The default TTS voice for the agent.                                          | `.env`                                 |
 | `LOG_LEVEL`               | Logging level for local development (`DEBUG`, `INFO`, etc.).                  | `.env.local`                           |
 | `AZURE_OPENAI_ENDPOINT`   | Endpoint for the Azure OpenAI resource used by the notebook.                  | `.env.notebook`                        |

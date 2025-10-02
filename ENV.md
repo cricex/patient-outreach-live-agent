@@ -18,9 +18,8 @@ These variables are essential for the deployed application. They should be place
 | `ACS_ENDPOINT`          | The endpoint URL for your ACS resource. (Usually inferred from the connection string).                  |    No    |
 | `ACS_OUTBOUND_CALLER_ID`| The E.164 formatted phone number to use as the caller ID for outbound calls.                              |   Yes    |
 | `TARGET_PHONE_NUMBER`   | The default recipient's E.164 phone number for outbound calls.                                            |    No    |
-| `AI_FOUNDRY_ENDPOINT`   | The WebSocket endpoint for your Azure OpenAI Voice Live deployment.                                     |   Yes    |
-| `AI_FOUNDRY_API_KEY`    | The API key for your Azure OpenAI resource.                                                             |   Yes    |
-| `VOICE_LIVE_MODEL`      | The specific Voice Live model to use (e.g., `gpt-4o-realtime-preview`).                                   |   Yes    |
+| `SPEECH_KEY`            | Azure Speech (Voice Live GA) subscription key.                                                         |   Yes    |
+| `SPEECH_REGION`         | Azure Speech region (e.g., `eastus`).                                                                  |   Yes    |
 | `DEFAULT_VOICE`         | The default TTS voice to use for the agent's responses (e.g., `en-US-AvaNeural`).                         |   Yes    |
 | `DEFAULT_SYSTEM_PROMPT` | The default system prompt for the AI agent if none is provided in the call request.                     |   Yes    |
 | `ENABLE_VOICE_LIVE`     | A feature flag to enable or disable the Voice Live integration.                                         |    No    |
@@ -60,27 +59,13 @@ These variables are used exclusively by the `notebook/notebook.ipynb`.
 
 ---
 
-## ⚙️ Advanced Media & Latency Tuning
+## ⚙️ Advanced Media & Latency (GA Simplified)
 
-These variables can be placed in either `.env` (for production) or `.env.local` (for local testing) to fine-tune performance.
+The GA Voice Live integration no longer requires manual VAD / commit tuning. All legacy `VL_*` variables from the preview implementation are **deprecated** and ignored. You can remove them from your environment files.
 
-| Variable                         | Description                                                                                             | Default Value |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------- |
-| `MEDIA_BIDIRECTIONAL`            | Use bidirectional media streaming with ACS.                                                             | `true`        |
-| `MEDIA_AUDIO_CHANNEL_TYPE`       | The audio channel type from ACS. Can be `mixed` or `unmixed`.                                           | `mixed`       |
-| `VL_INPUT_MIN_MS`                | Minimum milliseconds of audio to buffer before committing to the model.                                 | `160`         |
-| `VL_INPUT_SAFETY_MS`             | Additional safety margin (ms) added to the adaptive minimum commit threshold.                           | `40`          |
-| `VL_MAX_BUFFER_MS`               | Safety cap in milliseconds for the audio buffer before a forced commit.                                 | `2000`        |
-| `VL_SILENCE_COMMIT_MS`           | Silence gap in milliseconds that triggers an end-of-phrase commit.                                      | `140`         |
-| `VL_DYNAMIC_RMS_OFFSET`          | Base additive RMS offset above the noise floor to detect speech.                                        | `300`         |
-| `VL_MIN_SPEECH_FRAMES`           | Minimum number of consecutive speech frames (~20ms each) required to trigger a commit.                  | `5`           |
-| `VL_BOOTSTRAP_DURATION_MS`       | Window (ms) at the start of a call that uses more sensitive VAD settings to detect first speech.        | `2000`        |
-| `VL_BOOTSTRAP_RMS_OFFSET`        | A lower, more sensitive RMS offset used during the bootstrap window.                                    | `80`          |
-| `VL_BOOTSTRAP_MIN_SPEECH_FRAMES` | Minimum speech frames required during the bootstrap window.                                             | `3`           |
-| `VL_OFFSET_DECAY_STEP`           | Amount to reduce the RMS offset by during prolonged silence while hunting for speech.                   | `10`          |
-| `VL_OFFSET_DECAY_INTERVAL_MS`    | Interval (ms) for applying the RMS offset decay.                                                        | `200`         |
-| `VL_OFFSET_DECAY_MIN`            | The floor for the decayed RMS offset.                                                                   | `40`          |
-| `VL_BARGE_IN_ENABLED`            | Feature flag to enable or disable barge-in detection.                                                   | `true`        |
-| `VL_BARGE_IN_OFFSET`             | A sensitive RMS offset used for detecting barge-in while the agent is speaking.                         | `40`          |
-| `VL_BARGE_IN_CONSECUTIVE_FRAMES` | Number of consecutive frames above the barge-in threshold required to trigger an interruption.          | `3`           |
-| `VL_LOG_FIRST_COMMIT`            | If `true`, emits a structured log with detailed timing information for the first audio commit.          | `true`        |
+| Variable                 | Description                                                       | Default Value |
+| ------------------------ | ----------------------------------------------------------------- | ------------- |
+| `MEDIA_BIDIRECTIONAL`    | Use bidirectional media streaming with ACS.                      | `true`        |
+| `MEDIA_AUDIO_CHANNEL_TYPE` | The audio channel type from ACS (`mixed` or `unmixed`).          | `mixed`       |
+| `SPEECH_KEY`             | Azure Speech (GA Voice Live) subscription key.                   | (none)        |
+| `SPEECH_REGION`          | Azure Speech region (e.g., `eastus`).                            | (none)        |
