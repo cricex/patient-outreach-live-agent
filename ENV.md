@@ -22,6 +22,8 @@ These variables are essential for the deployed application. They should be place
 | `SPEECH_REGION`         | Azure Speech region (e.g., `eastus`).                                                                  |   Yes    |
 | `DEFAULT_VOICE`         | The default TTS voice to use for the agent's responses (e.g., `en-US-AvaNeural`).                         |   Yes    |
 | `DEFAULT_SYSTEM_PROMPT` | The default system prompt for the AI agent if none is provided in the call request.                     |   Yes    |
+| `VOICELIVE_LANGUAGE_HINT` | Optional language directive appended to the Voice Live system prompt (e.g., `English`, `en-US`).        |    No    |
+| `VOICELIVE_WAIT_FOR_CALLER` | If `true`, adds guidance so the agent waits silently for the callee to greet first (recommended for outbound). |    No    |
 | `ENABLE_VOICE_LIVE`     | A feature flag to enable or disable the Voice Live integration.                                         |    No    |
 | `CALL_TIMEOUT_SEC`      | The absolute maximum duration of a call in seconds before it is automatically terminated.               |    No    |
 | `CALL_IDLE_TIMEOUT_SEC` | The number of seconds of inactivity (no audio or events) before a call is automatically terminated.     |    No    |

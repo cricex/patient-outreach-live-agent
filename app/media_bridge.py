@@ -1,29 +1,40 @@
-"""WebSocket media bridge for /app2.
+"""WebSocket media bridge for `/app`.
 
 Responsibilities:
- - Accept ACS media WS, send initial ack (required to unlock audio payloads)
- - Parse inbound JSON metadata + audio frames (base64) or raw binary frames
- - Slice into 20ms frames (frame_bytes) and forward to SpeechSession (if enabled)
- - Pull outbound frames from SpeechSession and send to ACS if bidirectional enabled
+ - Accept ACS media WebSocket and send an initial ack (unlocks audio from ACS)
+ - Parse inbound JSON (AudioMetadata / AudioData) or raw binary frames
+ - Slice audio into fixed 20 ms (640-byte) PCM16 frames and forward to the
+     active Voice Live session (if inbound enabled)
+ - Pull synthesized frames from the session and send back to ACS (if outbound enabled)
 
-This is a *minimal* version without adaptive pacing or VAD heuristics.
+This module intentionally mirrors the minimal implementation from `/app2` so the
+behavior is predictable and easy to reason about.
 """
 from __future__ import annotations
-import asyncio, base64, json, logging, time
+
+import asyncio
+import base64
+import json
+import logging
+import time
+
 from fastapi import WebSocket
 from starlette.websockets import WebSocketState
-from .state import app_state
+
+from . import main as app_main
 from .config import settings
 from .speech_session import SpeechSession
+from .state import app_state
 
-logger = logging.getLogger("app2.media")
+logger = logging.getLogger("app.media")
 
 AUDIO_FRAME_BYTES = settings.media_frame_bytes  # 640 default
 
 # Track all active sockets for broadcast of model audio (usually 1)
 _active_media_sockets: set[WebSocket] = set()
 
-async def media_websocket(ws: WebSocket, token: str, speech: SpeechSession | None):
+
+async def media_websocket(ws: WebSocket, token: str) -> None:
     t0 = time.perf_counter_ns()
     offered = ws.headers.get("sec-websocket-protocol")
     subproto = offered.split(",")[0].strip() if offered else None
@@ -32,18 +43,19 @@ async def media_websocket(ws: WebSocket, token: str, speech: SpeechSession | Non
     try:
         if ws.application_state == WebSocketState.CONNECTED:
             await ws.send_text('{"type":"ack"}')
-    except Exception as e:
-        logger.warning("ack send failed token=%s err=%s", token, e)
+    except Exception as exc:
+        logger.warning("ack send failed token=%s err=%s", token, exc)
         return
     t2 = time.perf_counter_ns()
-    logger.info("MEDIA2 handshake token=%s accept_us=%d ack_us=%d", token, (t1-t0)//1000, (t2-t1)//1000)
+    logger.info("MEDIA handshake token=%s accept_us=%d ack_us=%d", token, (t1 - t0) // 1000, (t2 - t1) // 1000)
 
     _active_media_sockets.add(ws)
     app_state.media_ws_open()
 
-    async def outbound_loop():
+    async def outbound_loop() -> None:
         while True:
             await asyncio.sleep(settings.media_frame_interval_ms / 1000.0)
+            speech = app_main._speech
             if not (speech and speech.active and settings.media_enable_voicelive_out and settings.media_bidirectional):
                 continue
             frame = await speech.get_next_outbound_frame()
@@ -57,15 +69,16 @@ async def media_websocket(ws: WebSocket, token: str, speech: SpeechSession | Non
                     payload = json.dumps({"kind": "AudioData", "audioData": {"data": b64}})
                     await ws.send_text(payload)
                 app_state.media_out_audio(1, len(frame))
-            except Exception as e:
-                logger.debug("outbound frame send err: %s", e)
+            except Exception as exc:
+                logger.debug("outbound frame send err: %s", exc)
                 return
 
-    ob_task = asyncio.create_task(outbound_loop())
+    outbound_task = asyncio.create_task(outbound_loop())
 
-    AUDIO_CHUNK = AUDIO_FRAME_BYTES
+    audio_chunk = AUDIO_FRAME_BYTES
     try:
         while True:
+            current_speech_session = app_main._speech
             incoming = await ws.receive()
             if incoming.get("type") == "websocket.disconnect":
                 break
@@ -78,44 +91,53 @@ async def media_websocket(ws: WebSocket, token: str, speech: SpeechSession | Non
                     continue
                 kind = parsed.get("kind") or parsed.get("type")
                 if kind == "AudioMetadata":
-                    continue  # ignore metadata here (could capture sample rate)
-                # audio container variants
+                    continue
                 b64 = None
                 if isinstance(parsed.get("audioData"), dict) and isinstance(parsed["audioData"].get("data"), str):
                     b64 = parsed["audioData"]["data"]
-                elif isinstance(parsed.get("data"), str) and kind in {"AudioData","AudioChunk"}:
+                elif isinstance(parsed.get("data"), str) and kind in {"AudioData", "AudioChunk"}:
                     b64 = parsed["data"]
                 if b64:
                     try:
                         pcm = base64.b64decode(b64)
                     except Exception:
                         continue
-                    await _handle_inbound_pcm(pcm, speech, AUDIO_CHUNK)
+                    await _handle_inbound_pcm(pcm, current_speech_session, audio_chunk)
                 continue
             if data:
-                await _handle_inbound_pcm(data, speech, AUDIO_CHUNK)
-    except Exception as e:
-        logger.debug("media ws loop err token=%s err=%s", token, e)
+                await _handle_inbound_pcm(data, current_speech_session, audio_chunk)
+    except Exception as exc:
+        logger.debug("media ws loop err token=%s err=%s", token, exc)
     finally:
-        try: ob_task.cancel();
-        except Exception: pass
-        try: _active_media_sockets.discard(ws)
-        except Exception: pass
-        logger.info("MEDIA2 closed token=%s", token)
+        try:
+            outbound_task.cancel()
+        except Exception:
+            pass
+        try:
+            _active_media_sockets.discard(ws)
+        except Exception:
+            pass
+        logger.info("MEDIA closed token=%s", token)
 
-async def _handle_inbound_pcm(pcm: bytes, speech: SpeechSession | None, frame_bytes: int):
+
+async def _handle_inbound_pcm(pcm: bytes, speech: SpeechSession | None, frame_bytes: int) -> None:
     if not pcm:
         return
     frames = len(pcm) // frame_bytes
     if frames:
         app_state.media_in_audio(frames, len(pcm))
+        if app_state.media["inFrames"] % 100 == 0:
+            logger.debug(
+                "inbound frames=%d bytes_in=%d",
+                app_state.media["inFrames"],
+                app_state.media["audio_bytes_in"],
+            )
     if not (speech and speech.active and settings.media_enable_voicelive_in):
         return
-    # iterate fixed-size frames only (drop remainder)
-    for off in range(0, frames * frame_bytes, frame_bytes):
-        frame = pcm[off:off+frame_bytes]
+    for offset in range(0, frames * frame_bytes, frame_bytes):
+        frame = pcm[offset:offset + frame_bytes]
         try:
             await speech.send_input_frame(frame)
-        except Exception as e:
-            logger.debug("speech frame send err: %s", e)
+        except Exception as exc:
+            logger.debug("speech frame send err: %s", exc)
             break

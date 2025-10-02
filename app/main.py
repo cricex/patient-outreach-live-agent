@@ -1,10 +1,15 @@
-"""FastAPI endpoints orchestrating ACS call automation and Voice Live streaming."""
+"""FastAPI entrypoint for /app minimal bridge.
 
-from fastapi import FastAPI, HTTPException, Request
-from fastapi import WebSocket, WebSocketDisconnect
-from pydantic import BaseModel, Field
-from typing import Optional, Any, Dict
-from starlette.websockets import WebSocketState
+Adds diagnostic endpoints for ACS TLS troubleshooting (/acs/health, /acs/handshake).
+"""
+from __future__ import annotations
+import time, asyncio, logging, os, socket, ssl
+from urllib.parse import urlparse
+try:  # Python 3.8+ standard
+    from importlib import metadata as importlib_metadata  # type: ignore
+except Exception:  # pragma: no cover
+    import importlib_metadata  # type: ignore
+from fastapi import FastAPI, WebSocket, HTTPException, Request
 from azure.communication.callautomation import (
     CallAutomationClient,
     PhoneNumberIdentifier,
@@ -12,802 +17,345 @@ from azure.communication.callautomation import (
     StreamingTransportType,
     MediaStreamingContentType,
     MediaStreamingAudioChannelType,
-    AudioFormat,
 )
-try:
-    from azure.communication.callautomation import __version__ as callautomation_version
-except Exception:  # pragma: no cover
-    callautomation_version = "unknown"
 from azure.core.exceptions import AzureError
-from .state import app_state
+from pydantic import BaseModel, Field
 from .config import settings
-import logging
-import asyncio
-import time
-from .voice_live_ga import VoiceLiveSessionGA  # GA implementation
-import base64, json as _json
-import os
-from logging.handlers import RotatingFileHandler
+from .logging_config import configure_logging
+from .state import app_state
+from .speech_session import SpeechSession
+from .media_bridge import media_websocket
 
-logger = logging.getLogger("voice_call")
+logger = logging.getLogger("app.main")
+configure_logging()
+app = FastAPI(title="Voice Call /app", version="0.1.0")
+_speech: SpeechSession | None = None
+_timeout_task: asyncio.Task | None = None
 
-# --- Logging configuration (supports DEBUG file capture) ---
-_env_log_level = os.getenv("LOG_LEVEL", "INFO").upper()
-_log_dir = os.getenv("LOG_DIR", "logs")
-_log_file_level_name = os.getenv("LOG_FILE_LEVEL", "DEBUG").upper()
-try:
-    _log_file_level = getattr(logging, _log_file_level_name)
-except AttributeError:
-    _log_file_level = logging.DEBUG
-_log_file_force = os.getenv("LOG_FILE_ENABLE", "false").lower() == "true"
-try:
-    _log_file_max_kb = int(os.getenv("LOG_FILE_MAX_KB", "5120"))
-except ValueError:
-    _log_file_max_kb = 5120
-if _log_file_max_kb < 0:
-    _log_file_max_kb = 0
-try:
-    _log_file_backup_count = int(os.getenv("LOG_FILE_BACKUP_COUNT", "3"))
-except ValueError:
-    _log_file_backup_count = 3
-if _log_file_backup_count < 0:
-    _log_file_backup_count = 0
-_root = logging.getLogger()
-if not _root.handlers:
-    # Base stream handler (console)
-    stream_handler = logging.StreamHandler()
+# ---- Diagnostics helpers ----
+def _parse_acs_endpoint_host() -> str | None:
+    cs = settings.acs_connection_string
+    parts = cs.split(';')
+    for p in parts:
+        if p.lower().startswith('endpoint='):
+            ep = p.split('=',1)[1].strip()
+            if not ep:
+                return None
+            # ensure it has scheme for urlparse
+            if not ep.startswith('http'):  # pragma: no cover
+                ep = 'https://' + ep
+            u = urlparse(ep)
+            host = u.hostname
+            return host
+    return None
+
+async def _tls_handshake(host: str, timeout: float = 5.0):
+    result: dict = {"host": host}
     try:
-        stream_handler.setLevel(getattr(logging, "INFO" if _env_log_level == "DEBUG" else _env_log_level))
-    except Exception:
-        stream_handler.setLevel(logging.INFO)
-    fmt = logging.Formatter("%(levelname)s:%(name)s:%(message)s")
-    stream_handler.setFormatter(fmt)
-    _root.addHandler(stream_handler)
-    # Root level: full requested level so file handler (if any) gets everything
-    try:
-        _root.setLevel(getattr(logging, _env_log_level, logging.INFO))
-    except Exception:
-        _root.setLevel(logging.INFO)
-
-    # If DEBUG requested, also write detailed logs to rotating file
-    if (_env_log_level == "DEBUG" or _log_file_force) and _log_file_max_kb:
-        try:
-            os.makedirs(_log_dir, exist_ok=True)
-            file_path = os.path.join(_log_dir, "debug.log")
-            max_bytes = max(_log_file_max_kb, 1) * 1024
-            file_handler = RotatingFileHandler(
-                file_path,
-                maxBytes=max_bytes,
-                backupCount=_log_file_backup_count,
-                encoding="utf-8",
-            )
-            file_handler.setLevel(_log_file_level)
-            file_fmt = logging.Formatter(
-                "%(asctime)s %(levelname)s %(name)s %(filename)s:%(lineno)d | %(message)s",
-                datefmt="%Y-%m-%dT%H:%M:%S"
-            )
-            file_handler.setFormatter(file_fmt)
-            _root.addHandler(file_handler)
-            logger.info(
-                "FILE logging enabled path=%s level=%s max_kb=%s backups=%s force=%s",
-                file_path,
-                logging.getLevelName(_log_file_level),
-                _log_file_max_kb,
-                _log_file_backup_count,
-                _log_file_force,
-            )
-        except Exception as fh_err:
-            logger.warning("Failed to initialize debug file logging: %s", fh_err)
-
-# Reduce verbosity of third-party libs if desired
-for noisy in ["websockets.client", "websockets.protocol"]:
-    try:
-        logging.getLogger(noisy).setLevel(logging.INFO if _env_log_level != "DEBUG" else logging.DEBUG)
-    except Exception:
-        pass
-
-app = FastAPI(title="Voice Call PoC", version="0.1.0")
-
-_voice_live_session: VoiceLiveSessionGA | None = None
-_voice_live_pacer_task: asyncio.Task | None = None
-_active_media_sockets: set[WebSocket] = set()
-
+        t0 = time.time()
+        addr_info = socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
+        result["dns_records"] = [ai[4][0] for ai in addr_info[:5]]
+        result["dns_count"] = len(addr_info)
+        sock = socket.create_connection((host, 443), timeout=timeout)
+        ctx = ssl.create_default_context()
+        with ctx.wrap_socket(sock, server_hostname=host) as ssock:
+            result["cipher"] = ssock.cipher()
+            result["tls_version"] = ssock.version()
+            cert = ssock.getpeercert()
+            result["cert_subject"] = cert.get('subject')
+            result["cert_notAfter"] = cert.get('notAfter')
+        result["elapsed_ms"] = int((time.time()-t0)*1000)
+        result["ok"] = True
+    except Exception as e:  # pragma: no cover
+        result["ok"] = False
+        result["error"] = str(e)
+    return result
 
 class StartCallRequest(BaseModel):
-    """Inbound payload for launching a phone call via ACS."""
-    target_phone_number: Optional[str] = Field(None, description="Destination PSTN number in E.164 format; overrides TARGET_PHONE_NUMBER env var.")
-    system_prompt: Optional[str] = Field(None, description="Custom system prompt for this call; overrides DEFAULT_SYSTEM_PROMPT env var.")
-
+    target_phone_number: str | None = Field(None, description="E.164 phone number overriding TARGET_PHONE_NUMBER")
+    system_prompt: str | None = None
+    simulate: bool = Field(False, description="If true, skip ACS API and simulate call locally (no PSTN).")
 
 class StartCallResponse(BaseModel):
-    """Response describing the call connection that ACS created."""
     call_id: str
-    prompt_used: str
     to: str
+    prompt_used: str
 
+# ---- Helpers ----
 
 def _call_client() -> CallAutomationClient:
-    """Create a Call Automation client while logging redacted connection diagnostics."""
-    # Diagnostic logging without exposing full secret: show hash & length
-    cs = settings.acs_connection_string
-    import hashlib
-    redacted = None
-    try:
-        h = hashlib.sha256(cs.encode()).hexdigest()[:12]
-        redacted = f"endpoint_present={'endpoint=' in cs};accesskey_present={'accesskey=' in cs};len={len(cs)};sha256_12={h}"
-    except Exception:
-        redacted = "<hash_failed>"
-    logger.info("ACS CONNECTION STRING DIAG %s", redacted)
-    return CallAutomationClient.from_connection_string(cs)
+    return CallAutomationClient.from_connection_string(settings.acs_connection_string)
 
-
+# ---- Endpoints ----
 @app.get("/health")
-async def health() -> str:
-    """Simple readiness probe for platform health checks."""
+async def health():
     return "ok"
-
 
 @app.get("/status")
 async def status():
-    """Expose a snapshot of current call, voice live, and media metrics."""
     return app_state.snapshot()
 
+@app.get("/acs/health")
+async def acs_health():
+    host = _parse_acs_endpoint_host()
+    if not host:
+        return {"ok": False, "error": "Could not parse endpoint host", "conn_len": len(settings.acs_connection_string)}
+    hs = await _tls_handshake(host)
+    return {"connection_string_len": len(settings.acs_connection_string), **hs}
 
-@app.get("/debug/callback-base")
-async def debug_callback_base():
-    """Return the callback base URL seen by the process for troubleshooting tunnels."""
-    import os
-    runtime_base = os.getenv("APP_BASE_URL") or settings.app_base_url
-    return {"app_base_url_runtime": runtime_base}
-
+@app.get("/acs/handshake")
+async def acs_handshake():  # alias returning raw handshake diagnostics
+    return await acs_health()
 
 @app.post("/call/start", response_model=StartCallResponse)
 async def start_call(payload: StartCallRequest):
-    """Place an outbound ACS call and prime media streaming for the Voice Live bridge."""
+    """Initiate (or simulate) an outbound call.
+
+    If simulate=True, no ACS SDK call is performed; a synthetic call id is generated
+    and the Voice Live session is started immediately. Use this to exercise the
+    media bridge & model pipeline locally without PSTN charges.
+    """
+    global _speech
     prompt = payload.system_prompt or settings.default_system_prompt
+    dest = payload.target_phone_number or settings.target_phone_number or "SIMULATED"
+
+    if payload.simulate:
+        call_id = f"sim-{int(time.time()*1000)}"
+        app_state.begin_call(call_id, prompt)
+        # Start speech session immediately (normally triggered by CallConnected event)
+        if not _speech or not _speech.active:
+            _speech = SpeechSession()
+            try:
+                await asyncio.wait_for(_speech.connect(prompt), timeout=30.0)
+            except Exception as e:
+                logger.warning("Simulated speech session start failed: %s", e)
+        return StartCallResponse(call_id=call_id, to=dest, prompt_used=prompt)
+
+    # Real ACS path
+    if not payload.target_phone_number and not settings.target_phone_number:
+        raise HTTPException(400, "Destination number missing (provide target_phone_number or set TARGET_PHONE_NUMBER)")
+
+    token = f"m-{int(time.time()*1000)}"
+    # Always rely on APP_BASE_URL (user requested removing dynamic WEBSITE_HOSTNAME logic)
+    base_url = settings.app_base_url.rstrip('/')
+    if base_url.startswith("http://"):
+        raise HTTPException(400, "APP_BASE_URL must be https for ACS callbacks")
+    transport_url = f"wss://{base_url.split('://',1)[1]}/media/{token}"
+    media = MediaStreamingOptions(
+        transport_url=transport_url,
+        transport_type=StreamingTransportType.WEBSOCKET,
+        content_type=MediaStreamingContentType.AUDIO,
+        audio_channel_type=(MediaStreamingAudioChannelType.MIXED if settings.media_audio_channel_type == "mixed" else MediaStreamingAudioChannelType.UNMIXED),
+        enable_bidirectional=True,
+        audio_format="Pcm16KMono",
+        start_media_streaming=settings.media_start_at_create,
+    )
     try:
         client = _call_client()
-        resolved_to = payload.target_phone_number or settings.target_phone_number
-        if not resolved_to:
-            raise HTTPException(status_code=400, detail="Destination number missing: provide 'target_phone_number' in request or set TARGET_PHONE_NUMBER env.")
-        target = PhoneNumberIdentifier(resolved_to)
-        # Allow runtime override or detect Azure-provided hostname
-        import os
-        azure_hostname = os.getenv("WEBSITE_HOSTNAME")
-        if azure_hostname:
-            runtime_base = f"https://{azure_hostname}"
-        else:
-            runtime_base = os.getenv("APP_BASE_URL") or settings.app_base_url
-        callback_base = runtime_base.rstrip('/')
-        # In a deployed environment, we can be more lenient on the http check if it's behind a TLS-terminating proxy
-        if not azure_hostname and callback_base.startswith('http://'):
-            raise HTTPException(status_code=400, detail="APP_BASE_URL must be https (public) for ACS callbacks; use an HTTPS tunnel or deploy to Azure.")
-        if not azure_hostname and ('localhost' in callback_base or '127.0.0.1' in callback_base):
-            raise HTTPException(status_code=400, detail="APP_BASE_URL cannot be localhost for ACS callbacks; expose a public https URL.")
-        from urllib.parse import urlparse as _urlparse
-        public_host = _urlparse(callback_base).netloc
-        opaque_token = f"m-{int(time.time()*1000)}"
-        token_mode = settings.media_token_mode
-        if token_mode == "callid":
-            # Not supported with SDK 1.5.0 (start_media_streaming has no media_streaming parameter); fallback to opaque
-            logger.warning("MEDIA TOKEN MODE callid requested but unsupported in SDK 1.5.0; falling back to opaque create-time configuration")
-            token_mode = "opaque"
-        transport_url = f"wss://{public_host}/media/{opaque_token}"
-        channel_enum = (
-            MediaStreamingAudioChannelType.MIXED
-            if settings.media_audio_channel_type == "mixed"
-            else MediaStreamingAudioChannelType.UNMIXED
-        )
-        media_streaming = MediaStreamingOptions(
-            transport_url=transport_url,
-            transport_type=StreamingTransportType.WEBSOCKET,
-            content_type=MediaStreamingContentType.AUDIO,
-            audio_channel_type=channel_enum,
-            enable_bidirectional=True,
-            audio_format="Pcm16KMono",
-            start_media_streaming=settings.media_start_at_create,
-        )
-        logger.info(
-            "MEDIA STREAM CONFIG mode=%s bidirectional=%s start_at_create=%s channel=%s transport_url=%s",
-            token_mode,
-            settings.media_bidirectional,
-            settings.media_start_at_create,
-            settings.media_audio_channel_type,
-            transport_url,
-        )
-        logger.info(
-            "SDK create_call prep transport_url=%s sdk_version=%s", transport_url, callautomation_version
-        )
+        loop = asyncio.get_running_loop()
+        # Offload blocking SDK call (azure-core uses 'requests') so event loop can still serve callback validation pings.
+        def _do_create(with_media: bool = True):
+            if with_media:
+                return client.create_call(
+                    target_participant=PhoneNumberIdentifier(dest),
+                    callback_url=f"{base_url}/call/events",
+                    source_caller_id_number=PhoneNumberIdentifier(settings.acs_outbound_caller_id),
+                    media_streaming=media,
+                    operation_context=token,
+                )
+            else:
+                return client.create_call(
+                    target_participant=PhoneNumberIdentifier(dest),
+                    callback_url=f"{base_url}/call/events",
+                    source_caller_id_number=PhoneNumberIdentifier(settings.acs_outbound_caller_id),
+                    operation_context=token,
+                )
         try:
-            create_response = client.create_call(
-                target_participant=target,
-                callback_url=f"{callback_base}/call/events",
-                source_caller_id_number=PhoneNumberIdentifier(settings.acs_outbound_caller_id),
-                media_streaming=media_streaming,
-                operation_context=opaque_token,
-            )
-            logger.info("SDK create_call used media_streaming=True transport_url=%s", transport_url)
-        except TypeError as sig_err:
-            # Fallback: older/no media_streaming support – retry without it
-            logger.warning("create_call retry without media_streaming due to TypeError: %s", sig_err)
-            create_response = client.create_call(
-                target_participant=target,
-                callback_url=f"{callback_base}/call/events",
-                source_caller_id_number=PhoneNumberIdentifier(settings.acs_outbound_caller_id),
-                operation_context=opaque_token,
-            )
-            logger.info("SDK create_call used media_streaming=False (fallback) transport_url=%s", transport_url)
-        # SDK shape fallback handling
-        props = getattr(create_response, "call_connection_properties", None)
-        call_connection_id = None
-        if props is not None:
-            call_connection_id = getattr(props, "call_connection_id", None)
-        if not call_connection_id:
-            # Try direct attribute if SDK differs
-            call_connection_id = getattr(create_response, "call_connection_id", None)
-        if not call_connection_id:
-            raise RuntimeError("Could not determine call_connection_id from create_call response")
-        app_state.begin_call(call_connection_id, prompt)
-        logger.info("Placed outbound call call_id=%s to=%s", call_connection_id, resolved_to)
-        return StartCallResponse(call_id=call_connection_id, prompt_used=prompt, to=resolved_to)
+            resp = await loop.run_in_executor(None, _do_create, True)
+            logger.debug("create_call completed (media_streaming enabled)")
+        except TypeError as te:  # signature mismatch edge-case
+            logger.warning("create_call TypeError with media_streaming (%s) - retrying without", te)
+            resp = await loop.run_in_executor(None, _do_create, False)
+        except Exception as first_err:
+            logger.warning("create_call initial attempt failed (%s) - retry once without media_streaming", first_err)
+            try:
+                resp = await loop.run_in_executor(None, _do_create, False)
+            except Exception:
+                raise first_err
     except AzureError as e:
-        msg = f"ACS create_call failed: {e}"
-        logger.exception(msg)
-        app_state.set_error(msg)
-        raise HTTPException(status_code=502, detail="Call placement failed")
-
+        from azure.core.exceptions import ServiceRequestError
+        if isinstance(e, ServiceRequestError):
+            # Improve diagnostics: extract endpoint host, perform immediate handshake probe
+            host = _parse_acs_endpoint_host()
+            hs = None
+            if host:
+                try:
+                    hs = await _tls_handshake(host)
+                except Exception as he:  # pragma: no cover
+                    hs = {"ok": False, "error": str(he)}
+            # Attempt to surface internal client endpoint property variants
+            internal_endpoint = None
+            try:
+                internal_endpoint = getattr(getattr(client, '_call_automation_client', None), 'endpoint', None)
+            except Exception:  # pragma: no cover
+                pass
+            if not internal_endpoint:
+                try:
+                    internal_endpoint = getattr(getattr(client, '_call_automation_client', None), '_config', None) and getattr(client._call_automation_client._config, 'endpoint', None)
+                except Exception:  # pragma: no cover
+                    pass
+            logger.error(
+                "create_call TLS/network failure endpoint_internal=%s host=%s conn_str_len=%d first50=%r handshake=%s",
+                internal_endpoint,
+                host,
+                len(settings.acs_connection_string),
+                settings.acs_connection_string[:50],
+                hs,
+            )
+        logger.exception("create_call failed: %s", e)
+        raise HTTPException(502, "ACS call creation failed")
+    call_props = getattr(resp, "call_connection_properties", None)
+    call_id = getattr(call_props, "call_connection_id", None) or getattr(resp, "call_connection_id", None)
+    if not call_id:
+        raise HTTPException(500, "Could not determine call id")
+    app_state.begin_call(call_id, prompt)
+    # Optional early Voice Live session start (before CallConnected) for reduced initial latency
+    if settings.voicelive_start_immediate and (not _speech or not _speech.active):
+        _speech = SpeechSession()
+        try:
+            await asyncio.wait_for(_speech.connect(prompt), timeout=30.0)
+            logger.info("Early Voice Live session started prior to CallConnected for call_id=%s", call_id)
+        except Exception as e:
+            logger.warning("Early Voice Live session start failed (will retry on CallConnected): %s", e)
+    return StartCallResponse(call_id=call_id, to=dest, prompt_used=prompt)
 
 @app.post("/call/hangup")
-async def hangup_call():
-    """Hang up the active ACS call and tear down any Voice Live resources."""
-    global _voice_live_session
-    current = app_state.current_call
-    if not current:
-        raise HTTPException(status_code=409, detail="No active call")
-    call_id = current.get("call_id")
+async def hangup():
+    if not app_state.current_call:
+        raise HTTPException(409, "No active call")
+    call_id = app_state.current_call["call_id"]
     try:
         client = _call_client()
-        call_conn = client.get_call_connection(call_id)
-        call_conn.hang_up(is_for_everyone=True)
-    except Exception as e:  # broad catch to still end state
-        logger.warning("Hangup API failed for call_id=%s: %s", call_id, e)
+        conn = client.get_call_connection(call_id)
+        conn.hang_up(is_for_everyone=True)
+    except Exception:
+        logger.debug("hangup API failed (continuing)")
     app_state.end_call(call_id, reason="ManualHangup")
-    # Close Voice Live if open
-    if _voice_live_session and _voice_live_session.active:
-        await _voice_live_session.close()
-        app_state.end_voicelive("CallHangup")
-    _voice_live_session = None
-    return {"ok": True, "call_id": call_id, "ended": True}
-
-
-async def _timeout_watcher():
-    """Background task enforcing overall call duration and idle timeouts."""
-    global _voice_live_session
-    while True:
-        await asyncio.sleep(5)
-        try:
-            current = app_state.current_call
-            if not current:
-                continue
-            started = current.get("started_at")
-            if not started:
-                continue
-            last_event_age = None
-            if app_state.last_event_at:
-                last_event_age = time.time() - app_state.last_event_at
-            elapsed = time.time() - started
-            if elapsed > settings.call_timeout_sec:
-                cid = current.get("call_id")
-                logger.info("Call timeout reached (%.1fs > %ss) call_id=%s", elapsed, settings.call_timeout_sec, cid)
-                try:
-                    client = _call_client()
-                    call_conn = client.get_call_connection(cid)
-                    call_conn.hang_up(is_for_everyone=True)
-                except Exception as e:
-                    logger.warning("Timeout hangup API failed call_id=%s: %s", cid, e)
-                app_state.end_call(cid, reason="Timeout")
-                # Close Voice Live if open
-                if _voice_live_session and _voice_live_session.active:
-                    await _voice_live_session.close()
-                    app_state.end_voicelive("CallTimeout")
-                _voice_live_session = None
-            # Idle timeout uses dedicated setting
-            elif last_event_age and last_event_age > settings.call_idle_timeout_sec:
-                cid = current.get("call_id")
-                logger.info("Call idle timeout (no events %.1fs > %ss) call_id=%s", last_event_age, settings.call_idle_timeout_sec, cid)
-                app_state.end_call(cid, reason="IdleTimeout")
-                if _voice_live_session and _voice_live_session.active:
-                    await _voice_live_session.close()
-                    app_state.end_voicelive("IdleTimeout")
-                _voice_live_session = None
-        except Exception as loop_err:
-            logger.warning("Timeout watcher iteration error: %s", loop_err)
-
-
-@app.on_event("startup")
-async def _startup_tasks():
-    """Register background timers once the FastAPI app starts up."""
-    asyncio.create_task(_timeout_watcher())
-
+    global _speech
+    if _speech and _speech.active:
+        await _speech.close()
+        app_state.end_voicelive("Hangup")
+        _speech = None
+    return {"ok": True, "call_id": call_id}
 
 @app.post("/call/events")
-async def call_events(request: Request) -> Dict[str, Any]:
-    """Handle ACS webhook events and keep local call/Voice Live state in sync."""
-    global _voice_live_session
+async def call_events(request: Request):
+    global _speech
     try:
         body = await request.json()
-    except Exception as parse_err:  # JSONDecodeError or other
-        raw = await request.body()
-        logger.warning("Failed to parse ACS event JSON: %s raw=%r", parse_err, raw[:500])
-        raise HTTPException(status_code=400, detail="Invalid JSON payload for ACS events")
-    # ACS may send an array (CloudEvents batch) or a single event.
+    except Exception:
+        raise HTTPException(400, "Invalid JSON")
     events = body if isinstance(body, list) else [body]
-    logger.info("ACS event batch size=%d", len(events))
     ended = []
     for ev in events:
         if not isinstance(ev, dict):
-            logger.warning("Unexpected event shape (not dict): %r", ev)
             continue
-        event_type = (
-            ev.get("type")
-            or ev.get("eventType")
-            or ev.get("publicEventType")
-        )
+        et = ev.get("type") or ev.get("eventType") or ev.get("publicEventType")
         data = ev.get("data") or {}
-        call_connection_id = (
-            ev.get("callConnectionId")
-            or data.get("callConnectionId")
-            or ev.get("call_connection_id")
-        )
-        logger.info("ACS event type=%s call_connection_id=%s", event_type, call_connection_id)
-        # Enhanced failure / disconnect diagnostics
-        if event_type and (event_type.endswith("CreateCallFailed") or event_type.endswith("CallDisconnected")):
-            # Surface full event (trim excessively large fields if any)
-            try:
-                result_info = data.get("resultInformation") or data.get("resultinformation") or {}
-                code = result_info.get("code") or result_info.get("subCode") or result_info.get("errorCode")
-                subcode = result_info.get("subCode") or result_info.get("subcode")
-                message = result_info.get("message") or result_info.get("detail") or result_info.get("description")
-                logger.warning(
-                    "ACS %s detail code=%s subcode=%s message=%s raw_result=%s", event_type, code, subcode, message, result_info or 'N/A'
-                )
-                # Log callee / source if present
-                target = data.get("targets") or data.get("participants") or []
-                if target:
-                    logger.warning("ACS %s targets=%s", event_type, target)
-            except Exception as _diag_err:
-                logger.debug("ACS failure event diag parse error: %s", _diag_err)
-        app_state.update_last_event()
-        if not event_type or not call_connection_id:
+        if et:
+            logger.debug("call_events et=%s keys=%s", et, list(ev.keys())[:6])
+        call_id = data.get("callConnectionId") or ev.get("callConnectionId")
+        if not et or not call_id:
             continue
-        # Start Voice Live on CallConnected
-        if event_type.endswith("CallConnected") and app_state.current_call and app_state.current_call.get("call_id") == call_connection_id:
-            # Only needed if not auto-start at create
-            if settings.media_start_at_create:
-                logger.info("ACS MEDIA STREAM already requested at create (start_at_create=True) call_id=%s", call_connection_id)
-            else:
+        app_state.update_last_event()
+        if et.endswith("CallConnected") and app_state.current_call and app_state.current_call.get("call_id") == call_id:
+            # start media if not auto
+            if not settings.media_start_at_create:
                 try:
-                    client = _call_client()
-                    call_conn = client.get_call_connection(call_connection_id)
-                    call_conn.start_media_streaming()
-                    logger.info("ACS MEDIA STREAM START requested call_id=%s", call_connection_id)
-                except Exception as sm_err:
-                    logger.exception("Failed to start media streaming: %s", sm_err)
-            # Voice Live only if enabled
-            if settings.enable_voice_live and (not _voice_live_session or not _voice_live_session.active):
-                try:
-                    logger.info("VL-MAIN: Starting GA Voice Live session...")
-                    # GA-only session (preview endpoint/api_key removed)
-                    _voice_live_session = VoiceLiveSessionGA()
-                    logger.info("VL-MAIN: GA VoiceLiveSession instantiated. Connecting...")
-                    prompt = app_state.get_call_prompt(call_connection_id) or settings.default_system_prompt
-                    import os as _os
-                    runtime_default_voice = _os.getenv("DEFAULT_VOICE", settings.default_voice)
-                    
-                    # Add a specific timeout for the connection attempt
-                    # Model identifier deprecated – pass None (state will record placeholder)
-                    connect_task = _voice_live_session.connect(None, runtime_default_voice, prompt)
-                    await asyncio.wait_for(connect_task, timeout=15.0)
-                    
-                    logger.info("VL-MAIN: Voice Live connection successful.")
-                    app_state.begin_voicelive(_voice_live_session.session_id, _voice_live_session.voice or runtime_default_voice, model=None)
-                    # Launch outbound pacing task (segments Voice Live PCM deltas into fixed frames)
-                    if settings.media_enable_voicelive_out:
-                        async def _pacer():
-                            frame_interval = settings.media_frame_interval_ms / 1000.0
-                            expected = settings.media_frame_bytes
-                            coerce_warned = False
-                            # Adaptive backlog drain configuration
-                            MAX_BATCH_PER_TICK = 8  # upper safety bound
-                            HIGH_BACKLOG_THRESHOLD = 10  # if queue has more than this, drain faster
-                            LOW_BACKLOG_SLEEP_THRESHOLD = 2  # if <= this, revert to paced sleep
-                            while _voice_live_session and _voice_live_session.active:
-                                drained = 0
-                                backlog = _voice_live_session._seg_queue.qsize() if _voice_live_session else 0
-                                # Always attempt at least one frame
-                                frame = await _voice_live_session.get_next_outbound_frame()
-                                if frame is None:
-                                    # Nothing ready; normal pacing sleep
-                                    try:
-                                        app_state.media_out_backlog(backlog, drained)
-                                    except Exception:
-                                        pass
-                                    await asyncio.sleep(frame_interval)
-                                    continue
-                                drained += 1
-                                # If bidirectional disabled, just log + update metrics (no send)
-                                if not settings.media_bidirectional:
-                                    app_state.media_out_frame()
-                                    app_state.media_add_out_bytes(len(frame))
-                                else:
-                                    # Bidirectional: send frame (JSON / binary below)
-                                    try:
-                                        import base64 as _b64
-                                        from .config import settings as _settings_out
-                                        b64 = _b64.b64encode(frame).decode('ascii')
-                                        fmt = _settings_out.media_out_format
-                                        if fmt == "multi":  # temporarily coerce to single to avoid duplication / pitch artifacts
-                                            if not coerce_warned:
-                                                logger.warning("MEDIA OUT FORMAT multi coerced to json_simple (set MEDIA_OUT_FORMAT) to prevent duplication")
-                                                coerce_warned = True
-                                            fmt = "json_simple"
-                                        payloads: list[str] = []
-                                        if fmt in ("json_simple", "multi"):
-                                            payloads.append(_json.dumps({
-                                                "kind": "AudioData",
-                                                "audioData": {"data": b64}
-                                            }))
-                                        if fmt in ("json_wrapped", "multi"):
-                                            payloads.append(_json.dumps({"kind": "AudioData", "audioData": {"data": b64}}))
-                                        targets = list(_active_media_sockets)
-                                        total_sent = 0
-                                        for payload in payloads:
-                                            for _ws in targets:
-                                                try:
-                                                    await _ws.send_text(payload)
-                                                    total_sent += 1
-                                                except Exception as send_err:
-                                                    app_state.media_out_error()
-                                                    logger.debug("MEDIA OUT json send error: %s", send_err)
-                                        if fmt in ("binary", "multi"):
-                                            for _ws in targets:
-                                                try:
-                                                    await _ws.send_bytes(frame)
-                                                    total_sent += 1
-                                                except Exception as b_err:
-                                                    app_state.media_out_error()
-                                                    logger.debug("MEDIA OUT binary send error: %s", b_err)
-                                        if total_sent:
-                                            app_state.media_out_frame()
-                                            app_state.media_add_out_bytes(len(frame))
-                                            if app_state.media_snapshot().get("outFrames") <= 3:
-                                                logger.info("MEDIA OUT FRAME sent variants=%d targets=%d fmt=%s size=%d b64_len=%d", len(payloads) + (1 if fmt in ("binary","multi") else 0), len(targets), fmt, len(frame), len(b64))
-                                    except Exception as o_err:
-                                        app_state.media_out_error()
-                                        logger.debug("MEDIA OUT error building/sending frame: %s", o_err)
-
-                                # Additional backlog drain in same tick (no sleep) if large backlog
-                                while (_voice_live_session and _voice_live_session.active and
-                                       _voice_live_session._seg_queue.qsize() > HIGH_BACKLOG_THRESHOLD and
-                                       drained < MAX_BATCH_PER_TICK):
-                                    next_frame = await _voice_live_session.get_next_outbound_frame()
-                                    if not next_frame:
-                                        break
-                                    drained += 1
-                                    # Send without re-deriving config (reuse b64 path for each frame)
-                                    if not settings.media_bidirectional:
-                                        app_state.media_out_frame()
-                                        app_state.media_add_out_bytes(len(next_frame))
-                                    else:
-                                        try:
-                                            import base64 as _b64
-                                            b64n = _b64.b64encode(next_frame).decode('ascii')
-                                            payload = _json.dumps({"kind": "AudioData", "audioData": {"data": b64n}})
-                                            for _ws in list(_active_media_sockets):
-                                                try:
-                                                    await _ws.send_text(payload)
-                                                except Exception as send_err:
-                                                    app_state.media_out_error()
-                                                    logger.debug("MEDIA OUT json send error(backlog): %s", send_err)
-                                            app_state.media_out_frame()
-                                            app_state.media_add_out_bytes(len(next_frame))
-                                        except Exception as be2:
-                                            app_state.media_out_error()
-                                            logger.debug("MEDIA OUT backlog frame send err: %s", be2)
-
-                                # Record backlog metrics
-                                try:
-                                    qsize_now = _voice_live_session._seg_queue.qsize() if _voice_live_session else 0
-                                    app_state.media_out_backlog(qsize_now, drained_this_cycle=drained)
-                                except Exception:
-                                    pass
-
-                                # Sleep only if backlog is low
-                                if (_voice_live_session and _voice_live_session._seg_queue.qsize() <= LOW_BACKLOG_SLEEP_THRESHOLD):
-                                    await asyncio.sleep(frame_interval)
-                                else:
-                                    # minimal yield to avoid starving loop
-                                    await asyncio.sleep(0)
-                        try:
-                            global _voice_live_pacer_task
-                            _voice_live_pacer_task = asyncio.create_task(_pacer())
-                            logger.info("VOICE-LIVE PACER task started frame_bytes=%d interval_ms=%d", settings.media_frame_bytes, settings.media_frame_interval_ms)
-                        except Exception as pt_err:
-                            logger.warning("Failed to start pacer: %s", pt_err)
-                except Exception as vl_err:
-                    logger.exception("Failed to start Voice Live session: %s", vl_err)
-                    app_state.set_error(f"VoiceLive start failed: {vl_err}")
-        # Heuristic for call end events
-        if event_type in {"Microsoft.Communication.CallDisconnected", "Microsoft.Communication.CallEnded"} or event_type.endswith("CallDisconnected") or event_type.endswith("CallEnded"):
-            app_state.end_call(call_connection_id, reason=event_type)
-            ended.append(event_type)
-            # Close Voice Live too
-            if '_voice_live_session' in globals():
-                if _voice_live_session and _voice_live_session.active:
-                    try:
-                        await _voice_live_session.close()
-                    except Exception:
-                        pass
-                    app_state.end_voicelive(event_type)
-                _voice_live_session = None
-        # Media streaming failure diagnostics
-        if 'MediaStreamingFailed' in event_type:
-            try:
-                logger.error("ACS MediaStreamingFailed data=%s", data)
-                app_state.set_error(f"MediaStreamingFailed: {data}")
-            except Exception:
-                pass
+                    client = _call_client(); client.get_call_connection(call_id).start_media_streaming()
+                except Exception as e:
+                    logger.warning("start_media_streaming failed: %s", e)
+            # start speech session
+            if (not _speech or not _speech.active):
+                _speech = SpeechSession()
+                prompt = app_state.current_call.get("prompt") if app_state.current_call else settings.voicelive_system_prompt or settings.default_system_prompt
+                # Voice & model read from settings inside connect()
+                await asyncio.wait_for(_speech.connect(prompt), timeout=30.0)
+        if et.endswith("MediaStreamingStarted"):
+            app_state.media_stream_started()
+        if et.endswith("CallDisconnected") or et.endswith("CallEnded"):
+            app_state.end_call(call_id, reason=et)
+            if _speech and _speech.active:
+                await _speech.close(); app_state.end_voicelive(et)
+                _speech = None
+            ended.append(et)
     return {"ok": True, "processed": len(events), "ended": ended}
-
 
 @app.websocket("/media/{token}")
 async def media_ws(ws: WebSocket, token: str):
-    """Bridge ACS media frames to internal processing and Voice Live streaming."""
-    t0 = time.perf_counter_ns()
-    # 1) subprotocol negotiation (echo if offered)
-    offered = ws.headers.get("sec-websocket-protocol")
-    subproto = offered.split(",")[0].strip() if offered else None
+    global _speech
+    await media_websocket(ws, token)
 
-    await ws.accept(subprotocol=subproto)  # must be first, no awaits before
-    t1 = time.perf_counter_ns()
-
-    # 2) immediate ACK, no yields in between if possible
-    ack = '{"type":"ack"}'  # use the exact shape that previously unlocked AudioMetadata
-    try:
-        if ws.application_state == WebSocketState.CONNECTED:
-            await ws.send_text(ack)
-    except Exception as e:
-        logger.warning("MEDIA WS ACK send failed: %r", e)
-        return
-    t2 = time.perf_counter_ns()
-
-    logger.info(
-        "MEDIA WS HANDSHAKE token=%s accepted_subproto=%s timings_us accept=%d ack=%d",
-        token, subproto, (t1 - t0)//1000, (t2 - t1)//1000
-    )
-
-    # 3) now enter receive loop …
-    app_state.media_ws_open()
-    # Track active socket for outbound (Voice Live -> ACS) streaming
-    _active_media_sockets.add(ws)
-    logger.info(
-        "MEDIA WS CONNECT token=%s bidi=%s",
-        token,
-        settings.media_bidirectional,
-    )
-    # Simplified debugging version: keep socket open, log any frames, no outbound until stability achieved
-    first_in_logged = False
-    wav_writer = None
-    wav_path = settings.media_wav_path
-    frame_bytes_expected = settings.media_frame_bytes
-    import wave, io
-    if settings.media_dump_wav:
-        try:
-            wav_writer = wave.open(wav_path, 'wb')
-            wav_writer.setnchannels(1)
-            wav_writer.setsampwidth(2)  # 16-bit
-            wav_writer.setframerate(16000)
-            logger.info("MEDIA WAV DUMP enabled path=%s", wav_path)
-        except Exception as we:
-            logger.warning("MEDIA WAV open failed path=%s err=%s", wav_path, we)
-            wav_writer = None
-    first_raw_logged = False
-    last_log = time.time()
-    # Diagnostics for missing binary audio
-    metadata_seen_at: float | None = None
-    warned_no_binary = False
-    text_frames_after_metadata = 0
-    BIN_DIAG_THRESHOLD_SEC = 5.0  # warn if no audio this long after metadata
-    SAMPLE_TEXT_LOG_LIMIT = 20
-    AUDIO_CHUNK_SIZE = 640  # bytes per 20ms frame
-    try:
-        while True:
+# ---- Background timeout watcher ----
+async def _timeout_watcher():
+    global _speech
+    while True:
+        await asyncio.sleep(5)
+        cur = app_state.current_call
+        if not cur: continue
+        started = cur.get("started_at")
+        if not started: continue
+        elapsed = time.time() - started
+        if elapsed > settings.call_timeout_sec:
+            call_id = cur.get("call_id")
             try:
-                incoming = await asyncio.wait_for(ws.receive(), timeout=5.0)
-            except asyncio.TimeoutError:
-                if time.time() - last_log > 30:
-                    logger.info("MEDIA WS HEARTBEAT token=%s", token)
-                    last_log = time.time()
-                # Periodic check if we saw metadata but still no binary
-                if metadata_seen_at and not warned_no_binary and (time.time() - metadata_seen_at) > BIN_DIAG_THRESHOLD_SEC and app_state.media_snapshot().get("audio_bytes_in", 0) == 0:
-                    logger.warning(
-                        "MEDIA WS NO BINARY AUDIO %ss after metadata token=%s text_frames_post_meta=%d inFrames=%d",
-                        int(time.time() - metadata_seen_at),
-                        token,
-                        text_frames_after_metadata,
-                        app_state.media_snapshot().get("inFrames", -1),
-                    )
-                    warned_no_binary = True
-                continue
-            if not first_raw_logged:
-                logger.info("MEDIA WS FIRST RAW token=%s frame=%s", token, incoming)
-                first_raw_logged = True
-            if incoming.get("type") == "websocket.disconnect":
-                break
-            msg_text = incoming.get("text")
-            msg_bytes = incoming.get("bytes")
-            if msg_text is not None and msg_text:
-                app_state.media_set_schema('A')
-                is_metadata = False
-                is_audio = False
-                audio_kind = None
-                decoded_len = 0
-                # Attempt JSON parse once
-                parsed = None
-                try:
-                    parsed = _json.loads(msg_text)
-                except Exception:
-                    parsed = None
-                if parsed and isinstance(parsed, dict):
-                    audio_kind = parsed.get("kind") or parsed.get("type")
-                    # Metadata frame
-                    if (audio_kind == "AudioMetadata") or ('AudioMetadata' in msg_text and 'sampleRate' in msg_text):
-                        is_metadata = True
-                        metadata_seen_at = time.time()
-                        app_state.media_set_metadata()
-                        logger.info("MEDIA METADATA FRAME token=%s text_len=%d", token, len(msg_text))
-                    else:
-                        # Candidate audio payloads
-                        b64_data = None
-                        # Variants
-                        if parsed.get("data") and isinstance(parsed.get("data"), str) and (audio_kind in {"AudioData", "AudioChunk"}):
-                            b64_data = parsed.get("data")
-                        elif isinstance(parsed.get("audioData"), dict) and isinstance(parsed["audioData"].get("data"), str):
-                            b64_data = parsed["audioData"].get("data")
-                        if b64_data:
-                            try:
-                                pcm = base64.b64decode(b64_data)
-                                decoded_len = len(pcm)
-                                if decoded_len:
-                                    is_audio = True
-                                    app_state.media_add_in_bytes(decoded_len)
-                                    # Frame accounting (20ms == 640 bytes)
-                                    n_frames = decoded_len // AUDIO_CHUNK_SIZE
-                                    if n_frames:
-                                        app_state.media_add_in_frames(n_frames)
-                                    # Frame-by-frame energy metrics
-                                    if decoded_len % AUDIO_CHUNK_SIZE != 0:
-                                        logger.debug("MEDIA AUDIO SIZE not multiple frame_bytes len=%d", decoded_len)
-                                    # Iterate each 640-byte frame
-                                    for off in range(0, decoded_len, AUDIO_CHUNK_SIZE):
-                                        frame_slice = pcm[off:off+AUDIO_CHUNK_SIZE]
-                                        if len(frame_slice) < AUDIO_CHUNK_SIZE:
-                                            break
-                                        try:
-                                            _ = app_state.media_process_audio_frame(frame_slice)
-                                            # Conditional bridging to Voice Live (inbound -> model)
-                                            from .config import settings as _settings
-                                            if (
-                                                _settings.enable_voice_live
-                                                and _settings.media_enable_voicelive_in
-                                                and _voice_live_session
-                                                and _voice_live_session.active
-                                            ):
-                                                snap = app_state.media_snapshot()
-                                                started_flag = bool(snap.get("vl_in_started_at"))
-                                                if not started_flag:
-                                                    # Gate start on thresholds
-                                                    ns_frames = snap.get("audio_frames_non_silent", 0)
-                                                    rms_avg = snap.get("audio_rms_avg") or 0
-                                                    if (
-                                                        ns_frames >= _settings.media_vl_in_start_frames
-                                                        and rms_avg >= _settings.media_vl_in_start_rms
-                                                    ):
-                                                        app_state.media_mark_vl_in_started()
-                                                        logger.info(
-                                                            "VL-IN BRIDGE START non_silent_frames=%d rms_avg=%s thresholds(frames=%d,rms=%d)",
-                                                            ns_frames,
-                                                            rms_avg,
-                                                            _settings.media_vl_in_start_frames,
-                                                            _settings.media_vl_in_start_rms,
-                                                        )
-                                                        # Prime buffer with greeting response if not already (optional)
-                                                if started_flag or app_state.media_snapshot().get("vl_in_started_at"):
-                                                    try:
-                                                        await _voice_live_session.send_input_audio_frame(frame_slice)
-                                                    except Exception as vf_err:
-                                                        logger.debug("VL-IN frame send error: %s", vf_err)
-                                        except Exception as fe:
-                                            logger.debug("MEDIA AUDIO FRAME PROCESS ERR off=%d err=%s", off, fe)
-                                    # Remainder ignored (rare) – could buffer if needed
-                                    if wav_writer:
-                                        try:
-                                            wav_writer.writeframes(pcm)
-                                        except Exception as wf_err:
-                                            logger.warning("MEDIA WAV write err=%s", wf_err)
-                                            pass
-                                else:
-                                    logger.debug("MEDIA AUDIO EMPTY PCM token=%s kind=%s", token, audio_kind)
-                            except Exception as dec_err:
-                                logger.warning("MEDIA AUDIO BASE64 DECODE FAIL token=%s kind=%s err=%s", token, audio_kind, dec_err)
-                # Logging logic
-                if is_metadata and not first_in_logged:
-                    # Do not mark first audio timestamp yet (metadata only)
-                    first_in_logged = True
-                if not is_metadata and is_audio and not first_in_logged:
-                    logger.info("MEDIA FIRST AUDIO FRAME token=%s bytes=%d kind=%s", token, decoded_len, audio_kind)
-                    first_in_logged = True
-                # Sample logging of subsequent control/audio frames
-                if metadata_seen_at:
-                    if is_metadata:
-                        app_state.media_text_frame(post_metadata=False)
-                    else:
-                        app_state.media_text_frame(post_metadata=True)
-                        if text_frames_after_metadata < SAMPLE_TEXT_LOG_LIMIT:
-                            log_fn = logger.info if settings.media_log_all_text_frames else logger.debug
-                            # Determine number of frames inside this message
-                            frames_in_msg = 0
-                            if decoded_len:
-                                frames_in_msg = decoded_len // AUDIO_CHUNK_SIZE
-                            log_fn(
-                                "MEDIA TEXT FRAME token=%s idx=%d kind=%s audio=%s frames=%d bytes=%d len=%d",
-                                token,
-                                text_frames_after_metadata,
-                                audio_kind,
-                                is_audio,
-                                frames_in_msg,
-                                decoded_len,
-                                len(msg_text),
-                            )
-                            text_frames_after_metadata += 1
-                else:
-                    # Pre-metadata text (should not happen except metadata itself)
-                    app_state.media_text_frame(post_metadata=False)
-                continue
-            if msg_bytes is not None and msg_bytes:
-                size = len(msg_bytes)
-                app_state.media_add_in_bytes(size)
-                # For binary, treat each message as exactly one frame unless larger
-                frames = max(1, size // frame_bytes_expected)
-                app_state.media_add_in_frames(frames)
-                app_state.media_binary_frame()
-                if wav_writer:
-                    try:
-                        wav_writer.writeframes(msg_bytes)
-                    except Exception as wf_err:
-                        logger.warning("MEDIA WAV write err=%s", wf_err)
-                        wav_writer = None
-                if not first_in_logged:
-                    logger.info("MEDIA FIRST IN BINARY FRAME token=%s size=%d", token, size)
-                    first_in_logged = True
-                else:
-                    if size != frame_bytes_expected:
-                        logger.debug("MEDIA FRAME size unexpected got=%d expected=%d", size, frame_bytes_expected)
-                continue
-    except WebSocketDisconnect as d:
-        code = getattr(d, 'code', 'n/a')
-        logger.info("MEDIA WS DISCONNECT token=%s code=%s", token, code)
-    except Exception as e:
-        logger.warning("MEDIA WS ERROR token=%s err=%s", token, e)
-    finally:
+                client = _call_client(); client.get_call_connection(call_id).hang_up(is_for_everyone=True)
+            except Exception: pass
+            app_state.end_call(call_id, reason="Timeout")
+            if _speech and _speech.active:
+                await _speech.close(); app_state.end_voicelive("Timeout")
+                _speech = None
+        elif app_state.last_event_at and (time.time() - app_state.last_event_at) > settings.call_idle_timeout_sec:
+            call_id = cur.get("call_id")
+            app_state.end_call(call_id, reason="Idle")
+            if _speech and _speech.active:
+                await _speech.close(); app_state.end_voicelive("Idle")
+                _speech = None
+
+@app.on_event("startup")
+async def _startup():
+    global _timeout_task
+    _timeout_task = asyncio.create_task(_timeout_watcher())
+    # Log GA Voice Live readiness
+    try:
+        from .speech_session import VOICELIVE_AVAILABLE  # type: ignore
+        # Package versions & OpenSSL
         try:
-            if wav_writer:
-                wav_writer.close()
-                logger.info("MEDIA WAV DUMP closed path=%s", wav_path)
+            az_core_v = importlib_metadata.version('azure-core')
         except Exception:
-            pass
+            az_core_v = 'unknown'
         try:
-            _active_media_sockets.discard(ws)
+            callauto_v = importlib_metadata.version('azure-communication-callautomation')
         except Exception:
-            pass
-        app_state.media_ws_close()
+            callauto_v = 'unknown'
+        try:
+            voicelive_v = importlib_metadata.version('azure-ai-voicelive')
+        except Exception:
+            voicelive_v = 'missing'
+        openssl_v = ssl.OPENSSL_VERSION
+        host = _parse_acs_endpoint_host()
+        logger.info(
+            "startup voice_live_available=%s model=%s voice=%s endpoint=%s frame_bytes=%d az-core=%s callauto=%s voicelive=%s openssl=%s acs_host=%s",
+            VOICELIVE_AVAILABLE,
+            settings.voicelive_model,
+            settings.voicelive_voice,
+            settings.voicelive_endpoint,
+            settings.media_frame_bytes,
+            az_core_v,
+            callauto_v,
+            voicelive_v,
+            openssl_v,
+            host,
+        )
+    except Exception:
+        logger.info("startup voice_live_available=unknown")
