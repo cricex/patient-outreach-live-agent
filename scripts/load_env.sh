@@ -14,6 +14,27 @@ PROJECT_ROOT="$( cd "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd )"
 
 declare -a ENV_FILES=()
 
+_fallback_source_env_files() {
+    local file
+    local had_error=0
+
+    set -a
+    for file in "${ENV_FILES[@]}"; do
+        if [[ ! -r "$file" ]]; then
+            echo "Warning: env file '$file' is not readable; skipping." >&2
+            continue
+        fi
+        # shellcheck disable=SC1090
+        if ! source "$file"; then
+            echo "Warning: failed to source env file '$file'." >&2
+            had_error=1
+        fi
+    done
+    set +a
+
+    return $had_error
+}
+
 if [[ -f "$PROJECT_ROOT/.env" ]]; then
     ENV_FILES+=("$PROJECT_ROOT/.env")
 fi
@@ -38,57 +59,41 @@ if [[ ${#ENV_FILES[@]} -eq 0 ]]; then
     return 0
 fi
 
-if ! command -v python >/dev/null 2>&1; then
-    echo "Error: python executable not found in PATH; cannot parse .env files." >&2
+LOADED_VIA=${LOADED_VIA:-}
+EXPORT_SNIPPET=""
+
+if command -v python >/dev/null 2>&1; then
+    if EXPORT_SNIPPET="$(python "$SCRIPT_DIR/_load_env.py" "${ENV_FILES[@]}" 2> >(cat >&2))"; then
+        LOADED_VIA="python"
+    else
+        status=$?
+        if [[ $status -eq 2 ]]; then
+            echo "Warning: python-dotenv package is required for advanced parsing. Falling back to shell sourcing." >&2
+        else
+            echo "Warning: python-based env loader failed with status $status. Falling back to shell sourcing." >&2
+        fi
+        EXPORT_SNIPPET=""
+    fi
+else
+    echo "Warning: python executable not found; falling back to shell sourcing." >&2
+fi
+
+if [[ "$LOADED_VIA" == "python" ]]; then
+    if [[ -n "$EXPORT_SNIPPET" ]]; then
+        eval "$EXPORT_SNIPPET"
+    fi
+elif ! _fallback_source_env_files; then
+    echo "Error: failed to load one or more env files using shell fallback." >&2
     return 1
 fi
 
-# Use python + python-dotenv for robust parsing (quotes, multiline, comments, etc.).
-if ! EXPORT_SNIPPET="$(python - "${ENV_FILES[@]}" <<'PY'
-import os
-import shlex
-import sys
-from pathlib import Path
+echo "Loaded environment variables from:"
+for file in "${ENV_FILES[@]}"; do
+    echo "  - $file"
+done
 
-try:
-        from dotenv import dotenv_values
-except ModuleNotFoundError as exc:
-        print(f"python-dotenv is required but not installed: {exc}", file=sys.stderr)
-        sys.exit(2)
-
-env_files = sys.argv[1:]
-merged: dict[str, str] = {}
-
-for raw_path in env_files:
-        path = Path(raw_path).expanduser().resolve()
-        if not path.exists():
-                continue
-        data = dotenv_values(path)
-        for key, value in data.items():
-                if value is None:
-                        continue
-                merged[key] = value
-
-if not merged:
-        sys.exit(0)
-
-for key, value in merged.items():
-        print(f"export {key}={shlex.quote(value)}")
-PY
-"; then
-    status=$?
-    if [[ $status -eq 2 ]]; then
-        echo "Error: python-dotenv package is required. Install it with 'pip install python-dotenv'." >&2
-    fi
-    return $status
-fi
-
-if [[ -n "$EXPORT_SNIPPET" ]]; then
-    eval "$EXPORT_SNIPPET"
-    echo "Loaded environment variables from:"
-    for file in "${ENV_FILES[@]}"; do
-        echo "  - $file"
-    done
+if [[ "$LOADED_VIA" == "python" ]]; then
+    return 0
 fi
 
 return 0
