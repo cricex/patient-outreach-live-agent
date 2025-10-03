@@ -33,6 +33,7 @@ curl -v -X POST "$APP_BASE_URL/call/start" \
   -d @- <<EOF
 {
   "target_phone_number": null,
-  "system_prompt": null
+  "system_prompt": null,
+  "simulate": false
 }
 EOF

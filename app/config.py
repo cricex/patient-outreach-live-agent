@@ -66,6 +66,10 @@ class Settings(BaseModel):
     media_enable_voicelive_in: bool = True
     media_enable_voicelive_out: bool = True
     voicelive_upsample_16k_to_24k: bool = True
+    voicelive_input_flush_target_frames: int = 4
+    voicelive_input_flush_interval_ms: int = 60
+    voicelive_input_flush_max_interval_ms: int = 180
+    debug_voicelive_input_flush: bool = False
 
     @field_validator("app_base_url", "acs_connection_string", "acs_outbound_caller_id")
     @classmethod
@@ -88,6 +92,12 @@ class Settings(BaseModel):
             raise ValueError("MEDIA_AUDIO_CHANNEL_TYPE must be 'mixed' or 'unmixed'")
         if self.media_out_format not in {"json_simple", "binary"}:
             raise ValueError("MEDIA_OUT_FORMAT must be 'json_simple' or 'binary'")
+        if self.voicelive_input_flush_target_frames <= 0:
+            raise ValueError("VOICELIVE_INPUT_FLUSH_FRAMES must be > 0")
+        if self.voicelive_input_flush_interval_ms <= 0:
+            raise ValueError("VOICELIVE_INPUT_FLUSH_INTERVAL_MS must be > 0")
+        if self.voicelive_input_flush_max_interval_ms < self.voicelive_input_flush_interval_ms:
+            raise ValueError("VOICELIVE_INPUT_FLUSH_MAX_INTERVAL_MS must be >= interval")
 
 def load_settings() -> Settings:
     raw_conn = os.getenv("ACS_CONNECTION_STRING", "")
@@ -130,6 +140,10 @@ def load_settings() -> Settings:
         media_enable_voicelive_out=os.getenv("MEDIA_ENABLE_VL_OUT", "true").lower() == "true",
         voicelive_upsample_16k_to_24k=
             os.getenv("VOICELIVE_UPSAMPLE_16K_TO_24K", "true").lower() == "true",
+        voicelive_input_flush_target_frames=int(os.getenv("VOICELIVE_INPUT_FLUSH_FRAMES", "4")),
+        voicelive_input_flush_interval_ms=int(os.getenv("VOICELIVE_INPUT_FLUSH_INTERVAL_MS", "60")),
+        voicelive_input_flush_max_interval_ms=int(os.getenv("VOICELIVE_INPUT_FLUSH_MAX_INTERVAL_MS", "180")),
+        debug_voicelive_input_flush=os.getenv("DEBUG_VOICELIVE_INPUT_FLUSH", "false").lower() == "true",
     )
     settings.validate_voicelive()
     return settings

@@ -1,33 +1,28 @@
-# Preventive Care Gap Closure: Real time Voice Outreach (PoC)
-> **Note:** This project originally targeted the Public Preview of Azure Voice Live + Azure OpenAI realtime models. It has now been trimmed to a **GA-only Speech (Voice Live) implementation** (preview plumbing removed) as of 2025/10/01. See commit history for the migration path.
+# Preventive Care Gap Closure – Azure Voice Live Outreach
 
-> **Purpose:** Demonstrate an end to end voice pipeline that identifies patients due for preventive screenings from synthetic EHR like data, generates a concise reason for outreach, and calls them to book an appointment using Azure Communication Services, Azure AI Voice Live service, and Azure OpenAI realtime models for low latency, multilingual speech to speech.
-
-> **HIPAA disclaimer:** This repository is exploratory. It is not HIPAA compliant. Do not use with real PHI. The long term intent is to develop a compliant variant with proper safeguards. See To Do and Roadmap.
-
-> **General disclaimer:** This code is exploratory. It is not production ready. Review, validate, and re implement with appropriate safeguards before any clinical or operational deployment.
+> **What changed?** The preview hybrid (Voice Live + Azure OpenAI realtime) stack has been replaced with a **Voice Live GA-only** pipeline. All code now talks directly to Azure Communication Services (ACS) and Azure AI Voice Live, no secondary Azure OpenAI connection is required during calls.
+>
+> **HIPAA & production disclaimer:** This repository remains a research PoC. It is not HIPAA compliant, has not undergone threat modeling, and should not be used with real PHI without a full security/privacy review.
 
 ---
 
-## Index
+## Table of contents
 
 1. [Scenario: What It Does and Why It Matters](#scenario-what-it-does-and-why-it-matters)
-2. [Architecture Overview](#architecture-overview)
-3. [Features](#features)
+2. [Architecture](#architecture)
+3. [Feature highlights](#feature-highlights)
 4. [Prerequisites](#prerequisites)
-5. [Installation](#installation)
-6. [.env Configuration](#env-configuration)
-7. [Quick Start](#quick-start)
-8. [API Usage](#api-usage)
-9. [Prompts](#prompts)
-10. [Scripts](#scripts)
-11. [Observability](#observability)
-12. [Tuning and Known Behaviors](#tuning-and-known-behaviors)
-13. [Troubleshooting](#troubleshooting)
-14. [Notebook: Preventive Outreach and CALL_BRIEF](#notebook-preventive-outreach-and-call_brief)
-15. [Safety, Scope, and Non Goals](#safety-scope-and-non-goals)
-16. [To Do](#to-do)
-17. [Roadmap](#roadmap)
+5. [Install & configure](#install--configure)
+6. [Quick start workflow](#quick-start-workflow)
+7. [Calling API](#calling-api)
+8. [Prompts](#prompts)
+9. [Script toolbox](#script-toolbox)
+10. [Observability](#observability)
+11. [Tuning cheatsheet](#tuning-cheatsheet)
+12. [Troubleshooting](#troubleshooting)
+13. [Notebook (optional)](#notebook-optional)
+14. [Safety, scope, non-goals](#safety-scope-non-goals)
+15. [To do & roadmap](#to-do--roadmap)
 
 ---
 
@@ -43,7 +38,7 @@
   * explains the screening and answers common non clinical questions
   * provides basic procedure information
   * offers appointment times using a mocked scheduler
-  * is powered by **Azure Communication service** and **Azure AI Voice Live service** with **Azure OpenAI realtime models** for speech to speech
+  * is powered end-to-end by **Azure Communication Services** and **Azure AI Voice Live** (no Azure OpenAI realtime hop required)
 
 ### Why it matters
 
@@ -68,463 +63,245 @@ Unscripted conversation that uses the patient `CALL_BRIEF` for context and follo
 * **Patient:** Yes
 * **Agent:** Done. Bring a photo ID and your insurance card if you have one. If plans change, reply to the text or call [Number]. Have a good day
 
----
-
-## Architecture Overview
-
-```
-Simulated EHR -> Gap Detector -> Patient Summary (CALL_BRIEF)
-                         |
-                      FastAPI App
-   ACS Webhooks and Media WS        Azure AI Voice Live WS
-                 \                          /
-                 Pacer + Jitter Buffer + VAD
-                           |
-                 Azure OpenAI Realtime Models
-                           |
-                        Phone Call
-```
-
-* Telephony: Azure Communication Services for PSTN, event webhooks, media WebSocket
-* Realtime voice: **Azure AI Voice Live service** and **Azure OpenAI realtime models**
-* App: FastAPI with a bidirectional audio bridge, adaptive commit, jitter buffer, pacing
-* State and metrics: In memory, exposed at `/status`
-
-**Key runtime endpoints**
-
-* `POST /call/start` to create an outbound call
-* `POST /call/events` for ACS call lifecycle events
-* `WS /media/{token}` for the real time audio bridge
-* `GET /status` for live counters and health
 
 ---
 
-## Features
+## Architecture
 
-* Outbound PSTN calls using ACS
-* Bidirectional low latency audio streaming between the phone, **Azure AI Voice Live service**, and **Azure OpenAI realtime models**
-* AI powered conversation using Voice Live plus OpenAI realtime, with configurable system prompt and voice
-* Parameter driven calls with per request overrides for target number and prompt
-* Dynamic audio playback from the AI back to the callee
-* Event driven call management via ACS callbacks
-* Detailed status monitoring at `/status`
-* Adaptive VAD and pacing to buffer, commit, and synthesize with minimal lag
-* **Context injection** per call. The `CALL_BRIEF` is injected so the agent speaks to the right patient, procedure, and timing
-* **Safety guardrails** via system prompt and policies. Identity disclosure, purpose, opt out, respectful tone, non clinical scope, and language control
+The FastAPI orchestrator places calls with ACS, receives call webhooks, opens a single Azure AI Voice Live (gpt-realtime) session per call, and bridges 20 ms PCM audio between ACS and Voice Live over WebSockets using a steady pacer and flush-timer gating. Voice Live performs STT → multimodal reasoning → TTS end-to-end, so there’s no separate Azure OpenAI hop. Observability is sidecar-style via structured logs and /status (frame counts, RTT, flush activity, errors).
+
+```
+[Synthetic Notes] ──► [Notebook (optional)] ──► [CALL_BRIEF]
+                                              │
+                                              ▼
+                                     [FastAPI Orchestrator]
+                               (state, ACS webhooks, VL session)
+                                              │
+                  ┌────────────── Control (HTTP/Webhooks) ───────────────┐
+                  │                                                       │
+          [ACS Call Automation]                                  [Azure AI Voice Live]
+          • /call/start (outbound)                                • WS session (gpt-realtime)
+          • /call/events webhooks                                 • instructions = CALL_BRIEF
+                  │                                                       │
+                  └──────────── Media (WebSocket, PCM 16k/16-bit) ────────┘
+                                 ◄───── Media Bridge + Pacer ─────►
+                        (20 ms frames; flush-target/interval/max-interval)
+                                              │
+                                          [Phone Call]
+                                              │
+                                              └──────────► [Logs & Metrics sidecar]
+                                                           • /status (frames, RTT, flush: reason/targets)
+                                                           • structured logs / traces / alerts
+
+```
+
+Key runtime endpoints:
+
+* `POST /call/start` – initiate a call (real or simulated)
+* `POST /call/events` – required ACS callback entry point
+* `WS /media/{token}` – ACS media streaming bridge
+* `GET /status` – live counters, timers, and call state snapshot
+
+---
+
+## Feature highlights
+
+* **Azure Voice Live stack** – Azure AI Voice Live performs STT + multimodal reasoning + TTS end-to-end, no secondary Azure OpenAI hop required.
+* **Outbound calling via ACS** – PSTN dial-outs with media streaming turned on by default.
+* **Simulation mode** – Skip ACS entirely by sending `{ "simulate": true }` when exercising the bridge locally.
+* **Configurable prompts** – Global defaults plus per-request overrides for target number and system prompt.
+* **Input flush tuning** – Control buffer size and timers to balance responsiveness against VAD accuracy.
+* **Rich diagnostics** – `/status`, structured logs, optional RMS telemetry for input flushes.
 
 ---
 
 ## Prerequisites
 
-* Python 3.10 or higher
-* Azure subscription
-* Azure Communication Services resource with an outbound phone number
-* Azure Speech resource with Voice Live GA enabled (SPEECH_KEY, SPEECH_REGION)
-* `ngrok` for a public HTTPS tunnel during local development
+* Python 3.10+
+* Azure subscription with:
+  * Azure Communication Services resource + purchased outbound phone number
+  * Azure AI Voice Live resource (and access to the GA realtime model you plan to use)
+* `ngrok` (or an equivalent HTTPS tunnel) when running locally
 
 ---
 
-## Installation
+## Install & configure
 
 ```bash
 git clone <repository-url>
 cd <repository-directory>
 
 python -m venv .venv
-# Windows: .venv\Scripts\activate
+# Windows
+.venv\Scripts\activate
+# macOS/Linux
 source .venv/bin/activate
 
 pip install -r requirements.txt
 ```
 
----
+1. Copy your secrets into `.env` (deployment baseline).
+2. Create `.env.local` with local overrides. Start from the two-line skeleton below and fill in your tunnel:
 
-## .env Configuration
+  ```dotenv
+  APP_BASE_URL=
+  LOG_LEVEL=DEBUG
+  ```
 
-This project uses three separate environment files to manage configuration for different environments. This separation makes the deployment process more robust and prevents local development settings from accidentally leaking into production.
-
-1.  **`.env`**: Contains settings **exclusively for deployment to Azure**. This file should contain all the necessary secrets and configuration that the live application will use. It is read by the `scripts/deploy.sh` script.
-2.  **`.env.local`**: For **local development overrides**. Variables in this file will take precedence over those in `.env` when running the application locally. This is the place for your `ngrok` URL, local logging settings, etc.
-3.  **`.env.notebook`**: Contains settings **specific to the Jupyter notebook** (`notebook/notebook.ipynb`), such as the Azure OpenAI credentials for generating `CALL_BRIEF` summaries.
-
-**Setup:**
-
-1.  Copy `.env.sample` to a new file named `.env` and fill in the values for your Azure deployment.
-2.  Create a `.env.local` file for your local overrides.
-3.  Create a `.env.notebook` file for your notebook credentials.
-
-> **Security Note:** The `.gitignore` file is configured to ignore `.env`, `.env.local`, and `.env.notebook`, so your secrets will not be committed to source control.
-
-### Key Variables
-
-| Variable                  | Description                                                                   | Found In                               |
-| ------------------------- | ----------------------------------------------------------------------------- | -------------------------------------- |
-| `APP_BASE_URL`            | Public base URL of your app (e.g., ngrok URL for local, Azure URL for prod).  | `.env.local` (local), set by script (prod) |
-| `ACS_CONNECTION_STRING`   | Your full Azure Communication Services connection string.                     | `.env`                                 |
-| `ACS_OUTBOUND_CALLER_ID`  | The E.164 phone number to use as the caller ID.                               | `.env`                                 |
-| `TARGET_PHONE_NUMBER`     | The default phone number to call.                                             | `.env`                                 |
-| `SPEECH_KEY`              | Azure Speech subscription key (Voice Live GA).                                | `.env`                                 |
-| `SPEECH_REGION`           | Azure Speech region (e.g. `eastus`).                                          | `.env`                                 |
-| `DEFAULT_VOICE`           | The default TTS voice for the agent.                                          | `.env`                                 |
-| `LOG_LEVEL`               | Logging level for local development (`DEBUG`, `INFO`, etc.).                  | `.env.local`                           |
-| `AZURE_OPENAI_ENDPOINT`   | Endpoint for the Azure OpenAI resource used by the notebook.                  | `.env.notebook`                        |
-| `AZURE_OPENAI_KEY`        | API key for the Azure OpenAI resource used by the notebook.                   | `.env.notebook`                        |
-| `AZURE_OPENAI_DEPLOYMENT_NAME` | The chat model deployment used by the notebook.                          | `.env.notebook`                        |
-
-For a complete list of all advanced tuning variables, see `ENV.md`.
+  Add other variables only when you truly need to override the baseline—`scripts/load_env.sh` layers `.env.local` last.
+3. Run `source scripts/load_env.sh` to merge them. The loader prefers `python-dotenv`; it falls back to plain `source` if Python is unavailable.
+4. Review [ENV.md](ENV.md) for every supported variable and default.
 
 ---
 
-## Quick Start
-
-### One liners
+## Quick start workflow
 
 ```bash
-# Expose port 8000 publicly
-ngrok http 8000
-
-# Start the app
-uvicorn main:app --host 0.0.0.0 --port 8000 --log-level info
-
-# Place a test call
-curl -s -X POST "$APP_BASE_URL/call/start" -H 'content-type: application/json' -d '{}' | jq
-
-# Check live status
-curl -s "$APP_BASE_URL/status" | jq
-```
-
-### Scripted flow
-
-```bash
-# Load environment
+# 1) Load environment (merge .env + .env.local)
 source scripts/load_env.sh
 
-# Start ngrok
-./scripts/ngrok_tunnel.sh
-# First time only
-# ./scripts/ngrok_auth.sh
+# 2) Start an HTTPS tunnel if you want ACS callbacks
+./scripts/ngrok_tunnel.sh &
 
-# Start server
+# 3) Launch the FastAPI app
 ./scripts/start.sh
 
-# Poll status
-./scripts/poll_status.sh
+# 4) Trigger a call (edit simulate flag inside the script or payload)
+./scripts/make_call.sh
 
-# Initiate a call
-./scripts/start_call.sh
+# 5) Watch status and logs
+./scripts/poll_status.sh
+tail -f logs/app.log
 ```
+
+`scripts/make_call.sh` posts to `/call/start` using the current `APP_BASE_URL`. Edit the JSON block to flip `"simulate": true` for local dry runs (no PSTN usage) or set a specific `target_phone_number`.
 
 ---
 
-## API Usage
+## Calling API
 
-`POST /call/start` accepts optional overrides
+`POST /call/start`
 
-* `target_phone_number` string in E.164 format. Defaults to `.env` target if null or omitted
-* `system_prompt` string. Defaults to `.env` prompt if null or omitted
+| Field | Type | Default | Description |
+| ----- | ---- | ------- | ----------- |
+| `target_phone_number` | string or null | `.env` `TARGET_PHONE_NUMBER` | Override the callee per call. Must be E.164 when provided. |
+| `system_prompt` | string or null | `DEFAULT_SYSTEM_PROMPT` | Per-call prompt override. Plain text only. |
+| `simulate` | boolean | `false` | When `true`, skip ACS entirely and spin up the Voice Live session locally. |
 
-**Examples**
+Example simulated call:
 
 ```bash
-# Default call using .env
 curl -X POST "$APP_BASE_URL/call/start" \
   -H "Content-Type: application/json" \
-  -d '{"target_phone_number": null, "system_prompt": null}'
-
-# Override phone number
-curl -X POST "$APP_BASE_URL/call/start" \
-  -H "Content-Type: application/json" \
-  -d '{"target_phone_number": "+15551234567", "system_prompt": null}'
-
-# Override system prompt
-curl -X POST "$APP_BASE_URL/call/start" \
-  -H "Content-Type: application/json" \
-  -d '{"target_phone_number": null, "system_prompt": "You are a friendly scheduler. Keep answers short."}'
+  -d '{
+    "target_phone_number": null,
+    "system_prompt": null,
+    "simulate": true
+  }'
 ```
 
-The `system_prompt` and the injected `CALL_BRIEF` guide the agent so the conversation remains unscripted, context aware, and within guardrails.
+When the call is real (not simulated), ACS creates a call, invokes `/call/events`, and opens the `/media/{token}` WebSocket. The FastAPI app then connects to Voice Live and bridges audio in both directions.
 
 ---
 
 ## Prompts
 
-This app uses two prompt inputs:
+Two prompt layers steer the conversation:
 
-- **SYSTEM:** Defines the assistant role, tone, privacy, and call flow.
-- **CALL_BRIEF:** Supplies patient specific context for the call.
+* **System prompt** – global guardrails for tone, privacy, cadence. Default lives in `.env` but can be overridden per request.
+* **CALL_BRIEF** – patient-specific context produced by the notebook or precomputed upstream.
 
-Use the generic templates below in local testing or CI demos. Keep them plain text.
+Example system prompt snippet:
 
-### SYSTEM prompt example & template
-```bash
+```text
 BEGIN SYSTEM
 ROLE: Realtime calling assistant for {CLINIC_NAME}. Goal: schedule preventive care.
-LANGUAGE: {LANGUAGE}. Plain text only. No emojis or SSML.
-STYLE: Warm, brief, natural. 8 to 18 words per turn. Contractions OK.
-PRIVACY: Use first name only. Share details only after identity confirmed. No numbers or links.
-
-FLOW: greet → confirm identity → quick check-in → purpose → answer relevant questions → schedule.
-ONE QUESTION RULE: Ask one question at a time. Confirm once for need, date, time, location.
-
-DATE SPEECH:
-
-Do not read raw digits. Speak dates as “Month Year” or “Month day, Year” if asked.
-
-2024-08 → “by August 2024”; 2013-10-08 → “back in October 2013”; 1 to 3 months → “in the next one to three months.”
-
-WHY ANSWERS (after ID confirmed):
-
-Cite BRIEF.WHY in one friendly sentence.
-
-Optionally add one dated item from BRIEF.HISTORY using DATE SPEECH.
-
-Pattern: “Because {WHY}. Also, you were advised in {Month Year}.”
-
-TOPIC CADENCE AND STATE:
-
-Maintain per-topic flags: {check_back_used: false, offer_used: false}.
-
-CHECK BACK GUARD: Use a check-back only when your explanation is longer than one sentence, the patient sounded unsure, or they asked why or what or how. Never in two consecutive turns. Max one per topic unless the patient asks to clarify.
-
-OFFER GUARD: Do not offer to book in two consecutive turns. Offer at most once per topic unless the patient shows intent.
-
-INTENT GATE: Move to preferences only after an explicit yes or clear scheduling intent.
-
-DEFERRAL: If “not now,” acknowledge and offer a later reminder once. Do not re-offer unless the patient re-initiates.
-
-ON OR OFF TOPIC:
-
-Relevant “what is” questions: give one-sentence overview, then continue to scheduling.
-
-Off-topic: acknowledge and redirect to scheduling.
-
-SAFETY:
-
-No diagnoses or personalized medical advice. If urgent symptoms, advise emergency services and end.
-
-If caller is not the patient, request permission before discussing details.
-
-Respect opt out immediately.
-
-MICRO TEMPLATES (rotate; do not repeat within two turns):
-CHECK BACK: “Does that help?” | “Is that clear?” | “Want a quick recap?”
-ACKS: “Great to hear.” | “Got it.” | “Sorry to hear that.”
-OFFERS: “Want to set that up now?” | “Shall we find a time?”
-INTENT FOLLOW UP: “Happy to set it up. What days work best?”
-DEFERRAL: “No problem. Want a reminder in a few months?”
-REDIRECT: “I may not have that, but I can help schedule your care. Would this week work?”
-
+FLOW: greet → confirm identity → check-in → purpose → schedule.
+PRIVACY: First name only until identity confirmed. No PHI over voicemail.
+STYLE: Warm, brief, plain language. 8–18 words per turn.
+SAFETY: No diagnoses or medical advice. Escalate urgent symptom mentions to emergency services.
 END SYSTEM
 ```
 
-### CALL_BRIEF template and example
-```shell
-BEGIN CALL_BRIEF
-PATIENT_FIRST_NAME: John
-TOP_NEED: colonoscopy
-PRIORITY: routine
-TIMING: this month
-WHY: Due for preventive screening based on guidelines and prior advice.
-HISTORY: Referred in February 2021; reminded in March 2024; no completed colonoscopy on record.
-DO_NOT_SAY: IDs, age numbers, detailed history unless asked.
-OPENERS: Hi John, I am calling from {CLINIC_NAME}. Is this John? | How are you today? | I am calling because you may be due for a colonoscopy. Does that sound right?
-OVERVIEW_COLONOSCOPY: It checks the colon for polyps and cancer and helps prevent cancer.
-WHY_EXAMPLE: Because screening is due based on guidelines and prior advice. Also, you were advised in March 2024.
-SCHED_STARTERS: Can we look at times this week? | Do mornings or afternoons work better?
-END CALL_BRIEF
-```
+The `CALL_BRIEF` retains the same structure as the preview build (see `notebook/` for generators). Injecting both keeps the agent grounded on the correct patient, need, and prior touchpoints.
+
 ---
 
+## Script toolbox
 
-## Scripts
-
-| Script            | Description                                                                   |
-| ----------------- | ----------------------------------------------------------------------------- |
-| `load_env.sh`     | Loads `.env` into the current shell without eval                              |
-| `start.sh`        | Starts the app server. Uses gunicorn on Linux or macOS and uvicorn on Windows |
-| `ngrok_tunnel.sh` | Opens an ngrok tunnel for port 8000                                           |
-| `ngrok_auth.sh`   | Sets the ngrok auth token. Run once                                           |
-| `poll_status.sh`  | Polls `/status` and pretty prints JSON with jq                                |
-| `start_call.sh`   | Triggers `POST /call/start`. You can edit the JSON body here                  |
+| Script | Purpose |
+| ------ | ------- |
+| `load_env.sh` | Merge `.env` + `.env.local` (optionally more) into the current shell. Falls back to pure Bash if Python is unavailable. |
+| `start.sh` | Launch the FastAPI app (Gunicorn on Unix, uvicorn on Windows). |
+| `ngrok_auth.sh` | One-time ngrok auth token setup. |
+| `ngrok_tunnel.sh` | Launch ngrok on port 8000 and print the public URL. |
+| `poll_status.sh` | Repeatedly call `/status` and pretty-print the JSON response. |
+| `make_call.sh` | Fire `POST /call/start` with an editable JSON body (includes the `simulate` toggle). |
+| `deploy.sh` | Helper for packaging/pushing to Azure (customize before real deployments). |
 
 ---
 
 ## Observability
 
-**`GET /status`** exposes live counters and flags such as
-
-* `inFrames`, `outFrames`, `audio_bytes_in`, `audio_bytes_out`
-* `last_commit_frames`, `last_commit_ms`, `commit_errors_total`
-* `audio_rms_avg`, `audio_frames_non_silent`
-* `vl_in_started_at`, `schema`, `upstreamActive`
-
-Logs at INFO or DEBUG trace
-
-* ACS media WebSocket handshake and ACK
-* Voice Live session events
-* Pacer ticks, queue backpressure, send errors
+* `/status` returns counters such as `inFrames`, `outFrames`, `audio_bytes_in/out`, `last_flush_reason`, and high-level call state.
+* Logs (stdout and `logs/app.log`) capture ACS webhook events, Voice Live lifecycle, and input flush diagnostics. Set `LOG_LEVEL=DEBUG` (in `.env` or `.env.local`) to expand detail; add `DEBUG_VOICELIVE_INPUT_FLUSH=true` when you need RMS per flush.
 
 ---
 
-## Tuning and Known Behaviors
+## Tuning cheatsheet
 
-* **Commit underflows**
-  The model needs about 100 ms or more per commit. The app adapts dynamically using `MEDIA_VL_INPUT_MIN_MS` and `MEDIA_MIN_MARGIN_MS`. If commits are too small, raise `MEDIA_VL_INPUT_MIN_MS` to 200 to 220.
+| Issue | What to tweak |
+| ----- | ------------- |
+| Agent replies too slowly after caller stops speaking | Lower `VOICELIVE_INPUT_FLUSH_FRAMES` to `3` or reduce `VOICELIVE_INPUT_FLUSH_INTERVAL_MS` to `40`. |
+| Voice Live receives choppy audio | Increase `VOICELIVE_INPUT_FLUSH_FRAMES` or raise `VOICELIVE_INPUT_FLUSH_MAX_INTERVAL_MS` so flushes carry more context. |
+| Silence detected prematurely | Set `VOICELIVE_WAIT_FOR_CALLER=false` so the agent greets first (for inbound-type flows) or tweak system prompt guidance. |
+| Need to disable outbound synthesis temporarily | Add `MEDIA_ENABLE_VL_OUT=false` to `.env.local`. |
+| ACS callbacks 404 | Double-check `APP_BASE_URL` and confirm ngrok is exposing the same URL you configured with ACS. |
 
-* **Jittery or jumpy downlink**
-  Often queue overflow or pacing drift. Mitigations
-
-  * Use a single outbound format such as `json_simple` to prevent duplicates
-  * Use a pacer that sends one 640 byte frame about every 20 ms with a jitter buffer
-  * Drop oldest only when the queue saturates
-
-* **Slow pitch audio**
-  Usually duplicate or mismatched formats. Standardize frame size and use a single outbound format.
-
-* **Region latency**
-  Co locate app and model such as both in Virginia. Cross country round trip time can starve the pacer.
+All tuning variables and defaults live in [ENV.md](ENV.md).
 
 ---
 
 ## Troubleshooting
 
-* **Calls drop after about 80 seconds**
-  Historically an idle timeout. Verify that state updates occur on Voice Live events and that `app_state.update_last_event()` is invoked where applicable.
-
-* **ACS MediaStreamingFailed 1006 transport not operational**
-  Send an ACK immediately after accepting the media WebSocket. Ensure a public HTTPS endpoint through ngrok and align resource regions.
-
-* **No AI audio heard**
-  Confirm `outFrames` increases, `MEDIA_OUT_FORMAT=json_simple` is set, and pacer logs show frames leaving the queue.
-
-* **Model is not detecting your speech**
-  Confirm `audio_frames_non_silent` is greater than 0 and `last_commit_ms` is at least 120. Increase `MEDIA_VL_INPUT_MIN_MS` if needed.
-
-* **APP_BASE_URL not set**
-  Source `scripts/load_env.sh` in the same terminal running your scripts.
-
-* **404 from ACS**
-  Ensure `APP_BASE_URL` exactly matches your active ngrok URL.
-
-* **ngrok fails to start**
-  Verify `NGROK_AUTH_TOKEN` and that you ran `./scripts/ngrok_auth.sh` once.
+* **Call immediately terminates:** Check `logs/app.log` for missing Voice Live credentials or an `APP_BASE_URL` pointing at `http://`. The service enforces HTTPS for ACS.
+* **No audio from the agent:** Confirm `MEDIA_ENABLE_VL_OUT` is `true` and voice frames are leaving the bridge (`outFrames` increasing).
+* **Caller audio ignored:** Look for `flush_reason="timer"` spam. Increase `VOICELIVE_INPUT_FLUSH_FRAMES` or inspect RMS telemetry by setting `DEBUG_VOICELIVE_INPUT_FLUSH=true`.
+* **ngrok loopback errors:** Make sure `ngrok_tunnel.sh` is running in the same session that sourced the env so `APP_BASE_URL` stays in sync.
+* **ACS credential errors:** Remove quotes around `ACS_CONNECTION_STRING`; the loader already handles whitespace.
 
 ---
 
-## Notebook: Preventive Outreach and `CALL_BRIEF`
+## Notebook (optional)
 
-The repo includes an exploratory notebook at `notebook/notebook.ipynb`. It generates structured preventive care summaries called `CALL_BRIEF` from synthetic clinical note JSON and can optionally produce a short one way outbound message.
+`notebook/notebook.ipynb` remains for experimentation with synthetic clinical notes. It generates `CALL_BRIEF` payloads via Azure OpenAI **only for offline prep work**, the live call path no longer depends on it.
 
-**What it does**
-
-1. Loads a folder of JSON clinical note objects in `notebook/clinical_notes`
-2. Calls an Azure OpenAI chat deployment with a strict system prompt that returns
-
-   ```json
-   {
-     "patient_id": "...",
-     "appointment_needed": true,
-     "call_brief": "BEGIN CALL_BRIEF ... END CALL_BRIEF"
-   }
-   ```
-3. Builds a small DataFrame across patients
-4. Optionally turns a selected `CALL_BRIEF` into a 15 to 35 word outbound message
-5. Optional demo places a non interactive ACS call that only plays the generated text
-
-**Synthetic OMOP like notes**
-Inputs are synthetic and loosely OMOP like. They are flattened and simplified for LLM prompt experimentation. No real PHI is present.
-
-**Notebook environment variables**
-
-| Variable                                             | Purpose                                     |
-| ---------------------------------------------------- | ------------------------------------------- |
-| `NOTES_PATH`                                         | Directory containing synthetic patient JSON |
-| `AZURE_OPENAI_ENDPOINT` and `AZURE_OPENAI_KEY`       | Azure OpenAI resource and key               |
-| `AZURE_OPENAI_DEPLOYMENT_NAME`                       | Chat model deployment                       |
-| `AZURE_OPENAI_API_VERSION`                           | API version string                          |
-| `TTS_VOICE`                                          | Voice for the one way call demo             |
-| `TARGET_PHONE_NUMBER`                                | Callee for the demo                         |
-| `ACS_CONNECTION_STRING` and `ACS_OUTBOUND_CALLER_ID` | Required for the call demo                  |
-
-**When to use Notebook vs App**
-
-| Use case                          | Notebook | App                       |
-| --------------------------------- | -------- | ------------------------- |
-| Prompt and content iteration      | Yes      | No                        |
-| Unscripted real time conversation | No       | Yes                       |
-| Small batch generation            | Yes      | Limited and not optimized |
-| End to end voice validation       | No       | Yes                       |
-
-**Limitations**
-Single threaded, minimal error handling, not schema rigorous, not a medical device, no HIPAA controls, outbound demo is one way only.
+Environment variables for the notebook are isolated in `.env.notebook` (see [ENV.md](ENV.md)). Running the notebook is optional and not required for testing.
 
 ---
 
-## Safety, Scope, and Non Goals
+## Safety, scope, non-goals
 
-* **Data**
-  Synthetic only in this repo. Production requires HIPAA controls, a BAA, audit, and data minimization.
-
-* **Consent and disclosures**
-  Open with identity, purpose, and opt out. Respect do not call lists.
-
-* **Guardrails**
-  Conversations are unscripted but constrained by system instructions and the injected `CALL_BRIEF`. The agent
-
-  * stays within reminder, education, and scheduling scope
-  * avoids clinical diagnosis, treatment, or individualized medical advice
-  * discloses identity and purpose, honors opt out, and maintains a respectful tone
-  * uses the selected language consistently
-  * minimizes sensitive data in prompts and logs
-
-* **Escalation**
-  This PoC does not support live transfer or triage to a human. If a caller requests clinical guidance or complex help, instruct them to contact the clinic directly.
-
-* **Write back and integrations**
-  This PoC does not write back to an EHR, FHIR store, scheduler, or CRM. All scheduling is mocked.
-
-* **Fairness**
-  Use consistent scripts across languages in plain language.
-
-**PoC in scope**
-Synthetic gap detection, patient summary, multilingual live calling, mocked scheduling, basic metrics
-
-**Out of scope**
-EHR write back, clinical triage or escalation, payer rules, PHI storage, security hardening
+* **Data:** Synthetic only. Production usage demands HIPAA controls, PHI minimization, and key management.
+* **Consent:** Always open with identity and purpose, respect opt-outs, and honor do-not-call lists.
+* **Guardrails:** The system prompt enforces call flow, tone, and scope; Voice Live responses should remain in scheduling/education territory.
+* **Escalation:** No live transfer or clinical triage exists today. Direct callers to a human when medical advice is needed.
+* **Integrations:** No writes back to EHR/FHIR/CRM. Scheduling remains mocked to limit scope.
 
 ---
 
-## To Do
+## To do & roadmap
 
-Near term, actionable engineering tasks.
+Short-term engineering tasks:
 
-* Deploy to Azure with repeatable infrastructure
+* CI: add linting, unit tests, and a simulated `/call/start` smoke test.
+* Infrastructure: containerize, publish to Azure App Service/Container Apps, wire secrets via Key Vault.
+* Monitoring: publish structured logs + metrics to Azure Monitor / Application Insights.
+* Cost guardrails: document ACS and Voice Live quotas, add rate limiting.
 
-  * Containerize the FastAPI app
-  * Host on Azure App Service or Azure Container Apps
-  * Use Azure Key Vault for secrets and rotate keys on a schedule
-  * Configure Azure Monitor and Application Insights for logs and metrics
-  * Pin ACS and Azure OpenAI resources to regions that minimize round trip time
-  * Set up a custom domain and TLS
-  * Provide a basic Bicep or Terraform template in `infra`
-* Add automated smoke tests for `/call/start`, `/media`, and `/status`
-* Add CI checks such as lint, type check, unit tests, and container build
-* Document cost guardrails and quotas for ACS and Azure OpenAI usage
-* Validate security headers, CORS, and rate limits in the FastAPI app
+Forward-looking roadmap:
 
----
-
-## Roadmap
-
-Forward looking product and compliance work.
-
-* HIPAA readiness path
-
-  * Define architectural controls such as encryption in transit and at rest, key management in Key Vault, audit logging, access controls, PHI segmentation
-  * Replace synthetic data with secure integration patterns and a no PHI local mode for testing
-  * Add FHIR scheduling integration and secure storage
-  * Complete BAA process and formal risk assessment
-* Smarter jitter buffer with time stamped frames and drift correction
-* A or B scripts and SMS follow ups
-* Automated region pinning and health checks
-* Light schema validation and a small worker pool for notebook batching
+* HIPAA readiness (encryption, audit logs, BAA, PHI segmentation).
+* Smarter jitter buffer with timestamp drift correction.
+* Multi-channel analytics (turn transcripts, sentiment tagging, SMS follow-up experiments).
+* Region auto-selection + health checks for lower latency.

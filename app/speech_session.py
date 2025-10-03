@@ -91,11 +91,16 @@ class SpeechSession:
         # Input batching (flush to service without issuing manual commits; Server VAD handles turn taking)
         self._input_buffer = bytearray()
         self._input_frames_buffered = 0
-        self._input_flush_target_frames = 4  # aim for ~80 ms @ 20 ms frames
-        self._input_flush_interval_sec = 0.06  # tighter safety timer for quicker turn pickup
+        self._input_flush_target_frames = max(1, settings.voicelive_input_flush_target_frames)
+        base_interval_ms = max(settings.voicelive_input_flush_interval_ms, 1)
+        max_interval_ms = max(settings.voicelive_input_flush_max_interval_ms, base_interval_ms)
+        self._input_flush_interval_sec = base_interval_ms / 1000.0
+        self._input_flush_max_interval_sec = max_interval_ms / 1000.0
+        self._min_flush_delay_sec = min(self._input_flush_interval_sec, 0.02)
         self._last_flush_monotonic = time.monotonic()
         self._using_upsample = settings.voicelive_upsample_16k_to_24k
         self._flush_task: Optional[asyncio.Task] = None
+        self._debug_input_flush = settings.debug_voicelive_input_flush
 
     @property
     def active(self) -> bool:
@@ -237,10 +242,22 @@ class SpeechSession:
                 now = time.monotonic()
                 flush_due_to_count = self._input_frames_buffered >= self._input_flush_target_frames
                 flush_due_to_time = (now - self._last_flush_monotonic) >= self._input_flush_interval_sec
-                if flush_due_to_count or flush_due_to_time:
-                    await self._flush_input_buffer()
-                elif self._input_buffer:
-                    self._flush_task = asyncio.create_task(self._flush_after_delay())
+                should_flush = False
+                flush_reason = "count" if flush_due_to_count else None
+                if not flush_reason and flush_due_to_time:
+                    elapsed = now - self._last_flush_monotonic
+                    if elapsed >= self._input_flush_max_interval_sec:
+                        should_flush = True
+                        flush_reason = "max_interval"
+                    elif self._input_buffer:
+                        delay = max(self._input_flush_interval_sec - elapsed, self._min_flush_delay_sec)
+                        self._flush_task = asyncio.create_task(self._flush_after_delay(delay))
+                if flush_due_to_count:
+                    should_flush = True
+                if should_flush and self._input_buffer:
+                    await self._flush_input_buffer(flush_reason or "timer")
+                elif not flush_reason and self._input_buffer and not self._flush_task:
+                    self._flush_task = asyncio.create_task(self._flush_after_delay(self._input_flush_interval_sec))
 
             except Exception as exc:  # pragma: no cover
                 logger.debug("input frame send error: %s", exc)
@@ -253,27 +270,37 @@ class SpeechSession:
         except IndexError:
             return None
 
-    async def _flush_input_buffer(self):
+    async def _flush_input_buffer(self, reason: str = "timer"):
         if not self._input_buffer or not self._connection:
             return
+        payload = bytes(self._input_buffer)
+        frames = self._input_frames_buffered
+        energy = None
+        if self._debug_input_flush and audioop is not None:
+            try:
+                energy = audioop.rms(payload, 2)
+            except Exception:
+                energy = None
         try:
-            b64_chunk = base64.b64encode(self._input_buffer).decode("ascii")
+            b64_chunk = base64.b64encode(payload).decode("ascii")
             await self._connection.input_audio_buffer.append(audio=b64_chunk)
             logger.debug(
-                "flushed %d frames (%d bytes) to input buffer",
-                self._input_frames_buffered,
-                len(self._input_buffer),
+                "flushed %d frames (%d bytes) to input buffer reason=%s%s",
+                frames,
+                len(payload),
+                reason,
+                f" rms={energy}" if energy is not None else "",
             )
         finally:
             self._input_buffer.clear()
             self._input_frames_buffered = 0
             self._last_flush_monotonic = time.monotonic()
 
-    async def _flush_after_delay(self):
+    async def _flush_after_delay(self, delay: float):
         try:
-            await asyncio.sleep(self._input_flush_interval_sec)
+            await asyncio.sleep(max(delay, self._min_flush_delay_sec))
             if self._input_buffer:
-                await self._flush_input_buffer()
+                await self._flush_input_buffer("timer")
         except asyncio.CancelledError:
             pass
         finally:
