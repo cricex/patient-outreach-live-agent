@@ -346,6 +346,8 @@ All tuning variables and defaults live in [ENV.md](ENV.md).
 
 Environment variables for the notebook are isolated in `.env.notebook` (see [ENV.md](ENV.md)). Running the notebook is optional and not required for testing.
 
+> **Notebook prerequisite:** The outbound playback cell assumes your Azure Communication Services resource is associated with the same Azure AI Foundry (Speech) instance that provides TTS. Link them in the Azure portal first, otherwise ACS cannot access the neural voice and calls will connect with silence.
+
 ---
 
 ## Safety, scope, non-goals

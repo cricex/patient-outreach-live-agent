@@ -86,10 +86,26 @@ If you continue to use the optional preventive-care notebook, keep its credentia
 | Variable | Purpose |
 | -------- | ------- |
 | `NOTES_PATH` | Directory containing synthetic clinical notes. |
+| `APP_BASE_URL` | HTTPS callback base the notebook passes to ACS. Use a publicly reachable tunnel (ngrok) or swap to the dummy https placeholder baked into the helper. |
+| `AI_FOUNDRY_API_KEY` | Notebook-specific name for the Azure OpenAI key; the loader maps it to `AZURE_OPENAI_KEY`. |
 | `AZURE_OPENAI_ENDPOINT` | Azure OpenAI endpoint used only inside the notebook. |
-| `AZURE_OPENAI_KEY` | API key for the notebook workload. |
 | `AZURE_OPENAI_DEPLOYMENT_NAME` | Chat model deployment for `CALL_BRIEF` generation. |
 | `AZURE_OPENAI_API_VERSION` | API version string required by the SDK/REST call. |
+| `ACS_CONNECTION_STRING` | Minimal ACS access for the one-way playback demo. Same value as production `.env` is fine. |
+| `ACS_OUTBOUND_CALLER_ID` | E.164 caller ID number registered to your ACS resource. |
+| `TARGET_PHONE_NUMBER` | Default callee for notebook test calls. |
+| `TTS_VOICE` | Neural voice name used by the playback helper. |
+| `COGNITIVE_SERVICES_ENDPOINT` | Speech resource endpoint used for TTS synthesis. |
+
+For optional experimentation, you can also layer in any of the Voice Live toggles documented above (for example `MEDIA_BIDIRECTIONAL`)—the loader will merge them the same way as the app runtime.
+
+---
+
+## Tooling helpers
+
+| Variable | Purpose |
+| -------- | ------- |
+| `NGROK_AUTH_TOKEN` | Optional convenience token consumed by `scripts/ngrok_auth.sh` so each developer can run `ngrok` without re-entering credentials. |
 
 ---
 
