@@ -5,6 +5,9 @@ Adds diagnostic endpoints for ACS TLS troubleshooting (/acs/health, /acs/handsha
 from __future__ import annotations
 import time, asyncio, logging, os, socket, ssl
 from urllib.parse import urlparse
+
+# ---- TLS 1.3 workaround (applied in app/_ssl_patch.py at import time) ---
+# -------------------------------------------------------------------------
 try:  # Python 3.8+ standard
     from importlib import metadata as importlib_metadata  # type: ignore
 except Exception:  # pragma: no cover
@@ -177,9 +180,12 @@ async def start_call(payload: StartCallRequest):
             logger.warning("create_call TypeError with media_streaming (%s) - retrying without", te)
             resp = await loop.run_in_executor(None, _do_create, False)
         except Exception as first_err:
-            logger.warning("create_call initial attempt failed (%s) - retry once without media_streaming", first_err)
+            # Retry WITH media_streaming first — dropping it silently breaks audio.
+            logger.warning("create_call initial attempt failed (%s) - retry once WITH media_streaming", first_err)
             try:
-                resp = await loop.run_in_executor(None, _do_create, False)
+                await asyncio.sleep(0.5)
+                resp = await loop.run_in_executor(None, _do_create, True)
+                logger.info("create_call retry succeeded (media_streaming enabled)")
             except Exception:
                 raise first_err
     except AzureError as e:

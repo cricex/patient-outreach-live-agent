@@ -10,6 +10,8 @@ app/__pycache__/
 .env.local
 .env.notebook
 .env.sample
+back.env
+prior-auth.env
 .venv
 env/
 venv/
