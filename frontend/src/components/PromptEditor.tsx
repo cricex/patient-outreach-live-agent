@@ -16,6 +16,7 @@ export function PromptEditor({ onPromptChange, selectedScenario, onScenarioChang
   const [scenarioName, setScenarioName] = useState('')
   const [generating, setGenerating] = useState(false)
   const [generateInput, setGenerateInput] = useState('')
+  const [generateError, setGenerateError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -59,11 +60,14 @@ export function PromptEditor({ onPromptChange, selectedScenario, onScenarioChang
   async function handleGenerate() {
     if (!generateInput.trim()) return
     setGenerating(true)
+    setGenerateError(null)
     try {
       const result = await api.generatePrompt({ scenario: generateInput }) as { system_prompt: string; call_brief: string }
       setSystemPrompt(result.system_prompt)
       setCallBrief(result.call_brief)
-    } catch (err) {
+    } catch (err: any) {
+      const msg = err?.message || 'Generation failed'
+      setGenerateError(msg)
       console.error('Generate failed:', err)
     } finally {
       setGenerating(false)
@@ -129,6 +133,9 @@ export function PromptEditor({ onPromptChange, selectedScenario, onScenarioChang
         >
           {generating ? '✨ Generating...' : '✨ Generate with AI'}
         </button>
+        {generateError && (
+          <p className="text-xs text-red-400 mt-1">{generateError}</p>
+        )}
       </div>
 
       {/* Divider */}

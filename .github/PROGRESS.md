@@ -147,3 +147,5 @@
 - **23:35 UTC** — Phase 1 started, progress log created
 
 - **2026-04-10 13:34 UTC** — ✅ CI/CD workflows created: `ci.yml` (test + lint on push/PR) and `deploy.yml` (Docker build + Container Apps deploy on main)
+- **2026-04-10 18:00 UTC** — Auth gate deployed to Azure: Key Vault secret (demo-passwords) configured with RBAC, Docker image pushed to ACR (voiceagentdevacr), Container App updated with DEMO_PASSWORDS fallback env var. Verified: /health OK, /status returns 401, /auth/validate accepts valid password. 6 security fixes from adversarial review.
+- **2026-04-10 18:27 UTC** — Azure OpenAI provisioned for AI scenario generation: created `voiceagent-dev-openai` (OpenAI S0, eastus2) with custom subdomain, deployed gpt-4o (GlobalStandard, 10K TPM). Updated .env with FOUNDRY_INFERENCE_ENDPOINT/MODEL/API_KEY. Container App env vars updated. Frontend PromptEditor.tsx: added generateError state + visible red error text below generate button. TypeScript compiles clean.
