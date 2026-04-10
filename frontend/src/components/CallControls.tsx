@@ -37,6 +37,26 @@ export function CallControls({ systemPrompt, callBrief }: CallControlsProps) {
 
   const { lastMessage } = useWebSocket('/ws/call-status', true)
 
+  // Keyboard support: num row and numpad both work
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (isActive) return
+      // Ignore if user is typing in another input/textarea
+      const tag = (e.target as HTMLElement)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+
+      if (e.key >= '0' && e.key <= '9') {
+        handleDialerPress(e.key)
+      } else if (e.key === '+') {
+        setPhoneNumber(prev => prev.startsWith('+') ? prev : '+' + prev)
+      } else if (e.key === 'Backspace') {
+        handleBackspace()
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  })
+
   useEffect(() => {
     if (!lastMessage) return
     const status = lastMessage as CallStatus
