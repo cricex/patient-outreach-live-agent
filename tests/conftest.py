@@ -16,6 +16,9 @@ os.environ.setdefault("VOICELIVE_MODEL", "gpt-realtime")
 os.environ.setdefault("VOICELIVE_VOICE", "alloy")
 os.environ.setdefault("AZURE_VOICELIVE_API_KEY", "test-key")
 os.environ.setdefault("LOG_LEVEL", "WARNING")
+# Auth is disabled when DEMO_PASSWORDS is absent (no env var = no auth).
+# Explicitly remove it in case the parent shell has it set.
+os.environ.pop("DEMO_PASSWORDS", None)
 
 from fastapi.testclient import TestClient  # noqa: E402
 from app.main import app  # noqa: E402

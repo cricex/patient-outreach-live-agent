@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { LoginScreen } from './components/LoginScreen'
 import { PromptEditor } from './components/PromptEditor'
 import { CallControls } from './components/CallControls'
 import { DiagnosticsPanel } from './components/DiagnosticsPanel'
@@ -6,6 +7,9 @@ import { useDemoMode } from './hooks/useDemoMode'
 import type { PromptSet } from './types'
 
 function App() {
+  const [authenticated, setAuthenticated] = useState(() => {
+    return !!sessionStorage.getItem('authToken')
+  })
   const [selectedScenario, setSelectedScenario] = useState<PromptSet | null>(null)
   const [scenarios, setScenarios] = useState<PromptSet[]>([])
   const [systemPrompt, setSystemPrompt] = useState('')
@@ -26,6 +30,10 @@ function App() {
     }
     const found = scenarios.find(s => s.id === id)
     if (found) setSelectedScenario(found)
+  }
+
+  if (!authenticated) {
+    return <LoginScreen onLogin={() => setAuthenticated(true)} />
   }
 
   return (

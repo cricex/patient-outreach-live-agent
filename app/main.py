@@ -12,7 +12,9 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
+from .auth import AuthMiddleware, create_session_token, load_passwords
 from .config import settings
 from .logging_config import configure_logging
 from .routers import api, calls, diagnostics, media, ws
@@ -28,6 +30,22 @@ app.include_router(diagnostics.router)
 app.include_router(media.router)
 app.include_router(api.router)
 app.include_router(ws.router)
+
+# Auth middleware (after routers so it wraps all routes)
+app.add_middleware(AuthMiddleware)
+
+
+class AuthRequest(BaseModel):
+    password: str
+
+
+@app.post("/auth/validate")
+async def validate_auth(req: AuthRequest):
+    """Public endpoint — validates a shared password and returns a session token."""
+    token = create_session_token(req.password)
+    if token is None:
+        return {"valid": False}
+    return {"valid": True, "token": token}
 
 
 # Serve React frontend static files (production build)
@@ -50,7 +68,8 @@ if _frontend_dist.is_dir():
 
 @app.on_event("startup")
 async def _startup() -> None:
-    """Log configuration and SDK versions on startup."""
+    """Load auth passwords and log configuration on startup."""
+    load_passwords()
     versions = _get_sdk_versions()
     logger.info(
         "startup model=%s voice=%s endpoint=%s az-core=%s callauto=%s voicelive=%s openssl=%s",

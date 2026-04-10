@@ -13,11 +13,25 @@ import logging
 from fastapi import APIRouter, WebSocket
 from starlette.websockets import WebSocketDisconnect, WebSocketState
 
+from ..auth import is_valid_token
 from ..models.state import app_state
 from ..services.event_bus import event_bus
 
 logger = logging.getLogger("app.ws")
 router = APIRouter(tags=["websocket"])
+
+
+async def _ws_auth(ws: WebSocket) -> bool:
+    """Check auth token from query params before accepting WebSocket.
+
+    BaseHTTPMiddleware only covers HTTP requests — WebSocket connections
+    bypass it entirely, so each WS handler must auth independently.
+    """
+    token = ws.query_params.get("token", "")
+    if not is_valid_token(token):
+        await ws.close(code=1008, reason="Authentication required")
+        return False
+    return True
 
 
 @router.websocket("/ws/diagnostics")
@@ -27,6 +41,8 @@ async def diagnostics_ws(ws: WebSocket) -> None:
     On connect, sends recent event buffer so the UI can catch up.
     Then streams new events as they arrive from the event bus.
     """
+    if not await _ws_auth(ws):
+        return
     await ws.accept()
     sub_id, queue = event_bus.subscribe()
     logger.info("Diagnostics WS connected sub_id=%d", sub_id)
@@ -68,6 +84,8 @@ async def call_status_ws(ws: WebSocket) -> None:
     and sends the full state. Good for the status indicator and
     metrics dashboard.
     """
+    if not await _ws_auth(ws):
+        return
     await ws.accept()
     logger.info("Call status WS connected")
 
