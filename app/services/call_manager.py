@@ -23,6 +23,7 @@ from azure.core.exceptions import AzureError
 from ..config import settings
 from ..models.state import AppState, app_state
 from .call_session import CallSession
+from ..services.event_bus import event_bus, EventType
 
 logger = logging.getLogger("app.call")
 
@@ -90,6 +91,7 @@ class CallManager:
 
         # Create session and start Voice Live
         await app_state.begin_call(call_id, prompt)
+        event_bus.emit(EventType.CALL_STARTED, call_id=call_id, destination=dest or "SIMULATED")
         self._session = CallSession(call_id, app_state)
 
         # Set up auto-hangup callback
@@ -167,8 +169,10 @@ class CallManager:
             except Exception:
                 logger.debug("ACS hangup failed (continuing)")
 
+        event_bus.emit(EventType.CALL_ENDED, call_id=actual_id, reason=reason)
         await self._session.stop(reason)
         self._session = None
+        event_bus.clear()
 
         # Cancel hangup future if still pending
         if self._hangup_future and not self._hangup_future.done():

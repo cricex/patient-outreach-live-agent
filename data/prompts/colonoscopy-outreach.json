@@ -1,0 +1,12 @@
+{
+  "id": "colonoscopy-outreach",
+  "name": "Colonoscopy Outreach",
+  "description": "Preventive colonoscopy scheduling for patients with family history",
+  "system_prompt": "You are a scheduling assistant for Microsoft Health Clinic calling to help the patient schedule a colonoscopy. Be warm, brief, and natural. Keep turns to 1-2 sentences. Confirm identity before discussing details. One question at a time.",
+  "call_brief": "BEGIN CALL_BRIEF\nTOP_NEED: colonoscopy\nPRIORITY: urgent\nPATIENT_NAME: Charles\nTIMING: now\nWHY: Family history of colon cancer; screening overdue.\nHISTORY: Referred in February 2021; advised to schedule in February 2025; no completed colonoscopy on record.\nEND CALL_BRIEF",
+  "voice": "sage",
+  "model": "gpt-realtime",
+  "target_phone_number": null,
+  "created_at": "2026-04-10T00:00:00Z",
+  "updated_at": "2026-04-10T00:00:00Z"
+}

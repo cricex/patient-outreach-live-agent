@@ -13,6 +13,7 @@ import time
 from ..config import settings
 from ..models.state import AppState
 from .speech import SpeechService
+from ..services.event_bus import event_bus, EventType
 
 logger = logging.getLogger("app.call")
 
@@ -44,6 +45,7 @@ class CallSession:
             self.speech.voice or "unknown",
             self.speech.model,
         )
+        event_bus.emit(EventType.VL_SESSION_STARTED, call_id=self.call_id, session_id=self.speech.session_id)
         # Start timeout watcher
         self._timeout_task = asyncio.create_task(self._watch_timeouts())
         logger.info(
@@ -65,6 +67,7 @@ class CallSession:
         if self.speech.active:
             await self.speech.close()
 
+        event_bus.emit(EventType.VL_SESSION_ENDED, call_id=self.call_id, reason=reason)
         await self._app_state.end_voicelive(reason)
         await self._app_state.end_call(self.call_id, reason)
         logger.info(

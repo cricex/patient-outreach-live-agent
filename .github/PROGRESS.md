@@ -72,6 +72,40 @@
 
 ---
 
+## Phase 2+3 — UI + Prompt Management + Live Diagnostics
+
+### Wave 1 (parallel — no dependencies)
+
+| Task | Status | Notes |
+|------|--------|-------|
+| `p2-prompt-store` — Backend prompt store | ✅ | JSON CRUD + example colonoscopy prompt |
+| `p3-event-bus` — Diagnostic event bus | ✅ | Async pub/sub, 16 event types, recent buffer |
+| `p2-react-scaffold` — React + Vite scaffold | ✅ | Vite + React + TS + Tailwind v4, proxy, types, API client, WS hook |
+
+### Wave 2 (after services ready)
+
+| Task | Status | Notes |
+|------|--------|-------|
+| `p2-api-router` — /api/ REST endpoints | ✅ | 5 endpoints: prompt CRUD + generation placeholder |
+| `p3-diag-router` — /ws/ WebSocket endpoints | ✅ | /ws/diagnostics + /ws/call-status, mounted in main.py |
+| `p3-wire-events` — Wire event bus into services | ✅ | 10 event types wired across speech.py, call_session.py, call_manager.py |
+
+### Wave 3 (after scaffold + routers)
+
+| Task | Status | Notes |
+|------|--------|-------|
+| `p2-config-panel` — Config + prompt UI | ✅ | PromptEditor + App.tsx rewritten to 40/60 single-page layout |
+| `p2-call-controls` — Call controls UI | ✅ | Phone, voice, model, simulate, start/hangup, live status pill |
+| `p3-diagnostics-ui` — Diagnostics panel | ✅ | WaveformDisplay (canvas), EventLog, MetricsBar, DiagnosticsPanel composite |
+
+### Wave 4 (integration)
+
+| Task | Status | Notes |
+|------|--------|-------|
+| `p2p3-integrate` — Static serving + verification | ⏳ | FastAPI serves React build, end-to-end test |
+
+---
+
 ## Branching
 - `v1` — frozen snapshot of pre-refactor codebase
 - `v2` — active working branch (all Phase 1+ work)
@@ -80,7 +114,8 @@
 ## Log
 
 <!-- Entries prepended newest-first -->
-- **23:45 UTC** — Created `v1` branch (preserves v1 at `bdb632f`), switched to `v2` branch
+- **00:07 UTC** — Phase 2+3 started, 10 tasks decomposed across 4 waves
+- **00:02 UTC** — Phase 1 committed on `v2` branch (`22c6512`)
 - **23:40 UTC** — ✅ `p1-config` done — config.py rebuilt (removed 8 legacy fields, added 7 GA fields)
 - **23:38 UTC** — ✅ `p1-structure` done — directories created (routers/, services/, models/, data/prompts/)
 - **23:37 UTC** — ✅ `p1-deps` done — requirements.txt pinned (voicelive==1.1.0, added azure-identity)

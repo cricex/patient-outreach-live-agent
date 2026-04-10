@@ -7,12 +7,15 @@ from __future__ import annotations
 
 import logging
 import ssl
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .logging_config import configure_logging
-from .routers import calls, diagnostics, media
+from .routers import api, calls, diagnostics, media, ws
 
 configure_logging()
 logger = logging.getLogger("app.main")
@@ -23,6 +26,26 @@ app = FastAPI(title="Patient Outreach Voice Agent", version="2.0.0")
 app.include_router(calls.router)
 app.include_router(diagnostics.router)
 app.include_router(media.router)
+app.include_router(api.router)
+app.include_router(ws.router)
+
+
+# Serve React frontend static files (production build)
+_frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
+if _frontend_dist.is_dir():
+    app.mount("/assets", StaticFiles(directory=str(_frontend_dist / "assets")), name="static-assets")
+
+    @app.get("/")
+    async def serve_frontend() -> FileResponse:
+        return FileResponse(str(_frontend_dist / "index.html"))
+
+    # Catch-all for client-side routing (must be last)
+    @app.get("/{path:path}")
+    async def serve_frontend_fallback(path: str) -> FileResponse:
+        file_path = _frontend_dist / path
+        if file_path.is_file():
+            return FileResponse(str(file_path))
+        return FileResponse(str(_frontend_dist / "index.html"))
 
 
 @app.on_event("startup")

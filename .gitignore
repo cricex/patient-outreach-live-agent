@@ -33,6 +33,10 @@ deployment.zip
 
 .requirements.hash
 
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
 
 commands.md
 TASKS.md

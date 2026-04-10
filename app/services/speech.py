@@ -21,6 +21,7 @@ from typing import Any, Deque
 from azure.core.credentials import AzureKeyCredential
 
 from ..config import settings
+from ..services.event_bus import event_bus, EventType
 
 logger = logging.getLogger("app.voice")
 
@@ -64,6 +65,7 @@ class SpeechService:
         self._event_task: asyncio.Task | None = None
         self._output_queue: Deque[bytes] = deque(maxlen=500)
         self._output_buffer = bytearray()
+        self._inbound_frame_count: int = 0
 
     @property
     def active(self) -> bool:
@@ -165,6 +167,10 @@ class SpeechService:
             return
         try:
             await self._connection.input_audio_buffer.append(audio=pcm_bytes)
+            self._inbound_frame_count += 1
+            if self._inbound_frame_count >= 50:
+                event_bus.emit(EventType.AUDIO_INBOUND, frames=self._inbound_frame_count, session_id=self.session_id)
+                self._inbound_frame_count = 0
         except Exception as exc:
             logger.debug("audio send error: %s", exc)
 
@@ -232,24 +238,38 @@ class SpeechService:
 
                 if etype == ServerEventType.SESSION_UPDATED:
                     self._session_ready.set()
+                    event_bus.emit(EventType.VL_SESSION_READY, session_id=self.session_id)
                     logger.info("Voice Live session ready")
 
                 elif etype == ServerEventType.RESPONSE_AUDIO_DELTA:
                     delta = getattr(event, "delta", None)
                     if delta:
                         self._buffer_output_audio(delta)
+                        event_bus.emit(EventType.AUDIO_OUTBOUND, frames=len(delta), session_id=self.session_id)
 
                 elif etype == ServerEventType.INPUT_AUDIO_BUFFER_SPEECH_STARTED:
                     # Barge-in: user started speaking, clear queued output
                     self._output_queue.clear()
                     self._output_buffer.clear()
+                    event_bus.emit(EventType.BARGE_IN, session_id=self.session_id)
                     logger.debug("barge-in: cleared output queue")
 
                 elif etype == ServerEventType.ERROR:
                     error = getattr(event, "error", None)
+                    event_bus.emit(EventType.VL_ERROR, message=str(getattr(error, "message", error)), session_id=self.session_id)
                     logger.error(
                         "Voice Live error: %s", getattr(error, "message", error)
                     )
+
+                elif etype == ServerEventType.CONVERSATION_ITEM_INPUT_AUDIO_TRANSCRIPTION_COMPLETED:
+                    transcript = getattr(event, "transcript", "")
+                    if transcript:
+                        event_bus.emit(EventType.TRANSCRIPT_USER, text=transcript, session_id=self.session_id)
+
+                elif etype == ServerEventType.RESPONSE_AUDIO_TRANSCRIPT_DONE:
+                    transcript = getattr(event, "transcript", "")
+                    if transcript:
+                        event_bus.emit(EventType.TRANSCRIPT_AGENT, text=transcript, session_id=self.session_id)
 
         except asyncio.CancelledError:
             pass
