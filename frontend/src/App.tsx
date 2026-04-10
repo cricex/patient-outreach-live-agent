@@ -7,6 +7,7 @@ import type { PromptSet } from './types'
 
 function App() {
   const [selectedScenario, setSelectedScenario] = useState<PromptSet | null>(null)
+  const [scenarios, setScenarios] = useState<PromptSet[]>([])
   const [systemPrompt, setSystemPrompt] = useState('')
   const [callBrief, setCallBrief] = useState('')
   const { isDemoMode, mockScenarios } = useDemoMode()
@@ -16,13 +17,24 @@ function App() {
     setCallBrief(cb)
   }
 
+  function handleScenarioSelect(id: string) {
+    if (!id) {
+      setSelectedScenario(null)
+      setSystemPrompt('')
+      setCallBrief('')
+      return
+    }
+    const found = scenarios.find(s => s.id === id)
+    if (found) setSelectedScenario(found)
+  }
+
   return (
     <div className="h-screen flex flex-col bg-gray-950 text-gray-100">
       {/* Header */}
       <header className="shrink-0 border-b border-gray-800 bg-gray-900/80 backdrop-blur-sm">
         <div className="px-6 py-3 flex items-center">
           {/* Left: Brand */}
-          <div className="w-1/4">
+          <div className="shrink-0">
             <div className="text-sm font-semibold text-white tracking-tight">Live Voice Agent Studio</div>
             <div className="text-[10px] text-blue-400 uppercase tracking-widest font-medium">
               Azure AI Foundry
@@ -32,62 +44,47 @@ function App() {
             </div>
           </div>
 
-          {/* Center: Scenario title */}
-          <div className="flex-1 text-center">
-            <h1 className="text-xl font-bold text-white tracking-tight">
-              {selectedScenario?.name || 'New Scenario'}
-            </h1>
-            {selectedScenario?.description && (
-              <p className="text-xs text-gray-500 mt-0.5 max-w-md mx-auto truncate">
-                {selectedScenario.description}
-              </p>
-            )}
-          </div>
-
-          {/* Right: Status area */}
-          <div className="w-1/4 flex justify-end">
-            <div className="text-xs text-gray-500 font-mono">
-              v2.0
-            </div>
+          {/* Right: Scenario selector */}
+          <div className="ml-auto flex items-center gap-3">
+            <label className="text-[10px] text-gray-500 uppercase tracking-widest">Scenario</label>
+            <select
+              value={selectedScenario?.id || ''}
+              onChange={(e) => handleScenarioSelect(e.target.value)}
+              className="bg-gray-800 border border-gray-700 text-gray-100 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500 min-w-[200px]"
+            >
+              <option value="">— New Scenario —</option>
+              {scenarios.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+            <span className="text-xs text-gray-600 font-mono">v2.0</span>
           </div>
         </div>
       </header>
 
-      {/* Main: 40/60 split */}
+      {/* Main: 60/40 split */}
       <div className="flex-1 flex min-h-0">
-        {/* Left: Prompt Configuration (40%) */}
-        <div className="w-2/5 border-r border-gray-800 flex flex-col min-h-0">
-          <div className="px-5 pt-4 pb-2 shrink-0">
-            <h2 className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">
-              Prompt Configuration
-            </h2>
-            <p className="text-[11px] text-gray-600 mt-0.5">
-              Describe the scenario first, then generate or edit directly
-            </p>
-          </div>
-          <div className="flex-1 px-5 pb-4 overflow-y-auto">
+        {/* Left: Prompt Configuration (60%) */}
+        <div className="w-3/5 border-r border-gray-800 flex flex-col min-h-0">
+          <div className="flex-1 px-5 py-4 overflow-y-auto">
             <PromptEditor
               onPromptChange={handlePromptChange}
               selectedScenario={selectedScenario}
               onScenarioChange={setSelectedScenario}
+              onScenariosLoaded={setScenarios}
               demoScenarios={isDemoMode ? mockScenarios : null}
             />
           </div>
         </div>
 
-        {/* Right: Dialer + Diagnostics (60%) */}
-        <div className="w-3/5 flex flex-col min-h-0">
+        {/* Right: Dialer + Diagnostics (40%) */}
+        <div className="w-2/5 flex flex-col min-h-0">
           {/* Top: Call Settings */}
           <div className="border-b border-gray-800 flex flex-col min-h-0">
-            <div className="px-5 pt-4 pb-2 shrink-0 flex items-center justify-between">
-              <div>
-                <h2 className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">
-                  Call Settings
-                </h2>
-                <p className="text-[11px] text-gray-600 mt-0.5">
-                  Configure telephony, simulation mode, and runtime model settings
-                </p>
-              </div>
+            <div className="px-5 pt-4 pb-2 shrink-0">
+              <h2 className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">
+                Call Settings
+              </h2>
             </div>
             <div className="px-5 pb-4 overflow-y-auto">
               <CallControls systemPrompt={systemPrompt} callBrief={callBrief} />
@@ -100,9 +97,6 @@ function App() {
               <h2 className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">
                 Live Diagnostics
               </h2>
-              <p className="text-[11px] text-gray-600 mt-0.5">
-                Realtime audio activity, transport metrics, and session events
-              </p>
             </div>
             <div className="flex-1 px-5 pb-4 overflow-hidden">
               <DiagnosticsPanel callActive={true} />
