@@ -16,7 +16,7 @@ azure-ai-voicelive==1.1.0
 aiohttp>=3.9.0
 
 # Azure AI Inference (Foundry chat completions for prompt generation)
-azure-ai-inference>=1.0.0b1
+openai>=1.0.0
 
 # Azure Key Vault (shared-password auth gate)
 azure-keyvault-secrets>=4.7.0

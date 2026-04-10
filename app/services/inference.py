@@ -84,10 +84,8 @@ async def generate_scenario(
     )
 
     try:
-        from azure.ai.inference.aio import ChatCompletionsClient
-        from azure.core.credentials import AzureKeyCredential
+        from openai import AsyncAzureOpenAI
 
-        # Credential: use dedicated key, fall back to Voice Live key
         api_key = settings.foundry_inference_api_key or settings.voicelive_api_key
         if not api_key:
             raise RuntimeError(
@@ -95,21 +93,24 @@ async def generate_scenario(
                 "(set FOUNDRY_INFERENCE_API_KEY or AZURE_VOICELIVE_API_KEY)"
             )
 
-        client = ChatCompletionsClient(
-            endpoint=settings.foundry_inference_endpoint.rstrip("/"),
-            credential=AzureKeyCredential(api_key),
+        # Foundry exposes an OpenAI-compatible endpoint
+        endpoint = settings.foundry_inference_endpoint.rstrip("/")
+        client = AsyncAzureOpenAI(
+            azure_endpoint=endpoint,
+            api_key=api_key,
+            api_version="2024-12-01-preview",
         )
 
-        async with client:
-            response = await client.complete(
-                model=settings.foundry_inference_model,
-                messages=[
-                    {"role": "system", "content": system_msg},
-                    {"role": "user", "content": user_message},
-                ],
-                temperature=0.7,
-                max_tokens=4000,
-            )
+        response = await client.chat.completions.create(
+            model=settings.foundry_inference_model,
+            messages=[
+                {"role": "system", "content": system_msg},
+                {"role": "user", "content": user_message},
+            ],
+            temperature=0.7,
+            max_tokens=4000,
+        )
+        await client.close()
 
         # Extract content from response
         content = response.choices[0].message.content
@@ -144,10 +145,10 @@ async def generate_scenario(
         }
 
     except ImportError:
-        logger.error("azure-ai-inference not installed")
+        logger.error("openai package not installed")
         raise RuntimeError(
-            "azure-ai-inference package not installed. "
-            "Run: pip install azure-ai-inference"
+            "openai package not installed. "
+            "Run: pip install openai"
         )
     except json.JSONDecodeError as exc:
         logger.error("Failed to parse inference response as JSON: %s", exc)
