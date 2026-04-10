@@ -206,7 +206,7 @@ class SpeechService:
                 voice=voice_cfg,
                 input_audio_format=InputAudioFormat.PCM16,
                 output_audio_format=OutputAudioFormat.PCM16,
-                input_audio_transcription=AudioInputTranscriptionOptions(),
+                input_audio_transcription=AudioInputTranscriptionOptions(model="whisper-1"),
                 turn_detection=ServerVad(
                     threshold=settings.voicelive_vad_threshold,
                     prefix_padding_ms=settings.voicelive_vad_prefix_padding_ms,
