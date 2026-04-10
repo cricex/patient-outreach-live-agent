@@ -103,6 +103,7 @@ def _upsample_16k_to_24k(pcm_16k: bytes) -> bytes:
 try:
     from azure.ai.voicelive.aio import connect as voicelive_connect
     from azure.ai.voicelive.models import (
+        AudioInputTranscriptionOptions,
         RequestSession,
         AzureStandardVoice,
         Modality,
@@ -205,6 +206,7 @@ class SpeechService:
                 voice=voice_cfg,
                 input_audio_format=InputAudioFormat.PCM16,
                 output_audio_format=OutputAudioFormat.PCM16,
+                input_audio_transcription=AudioInputTranscriptionOptions(),
                 turn_detection=ServerVad(
                     threshold=settings.voicelive_vad_threshold,
                     prefix_padding_ms=settings.voicelive_vad_prefix_padding_ms,
