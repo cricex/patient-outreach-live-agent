@@ -62,8 +62,8 @@ class Settings(BaseModel):
     foundry_inference_api_key: str | None = None
 
     # ── Call lifecycle ──────────────────────────────────────────────────
-    call_timeout_sec: int = 90
-    call_idle_timeout_sec: int = 90
+    call_timeout_sec: int = 600
+    call_idle_timeout_sec: int = 120
     enable_call_recording: bool = False
 
     # ── Media bridge ────────────────────────────────────────────────────
