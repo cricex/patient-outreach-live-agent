@@ -114,6 +114,7 @@
 ## Log
 
 <!-- Entries prepended newest-first -->
+- **2026-04-10 14:35 UTC** — v2 merged to main, tagged `v2.0.0`. 87 files changed, +8224 / -2280 lines.
 - **2025-07-18 19:30 UTC** — First Azure deployment: Bicep provisioned (Container Apps Environment, ACR, Key Vault, Log Analytics, managed identity), Docker image pushed to voiceagentdevacr.azurecr.io, Container App live at https://voiceagent-dev-app.ambitiouspond-82878311.eastus2.azurecontainerapps.io — /health and /status verified
 - **2026-04-10 13:45 UTC**— GitHub Actions CI/CD: ci.yml (pytest + frontend lint/build on push/PR), deploy.yml (Docker → ACR → Container Apps on merge to main)
 - **2026-04-10 13:40 UTC** — Bicep infrastructure: infra/main.bicep (Container Apps, ACR, Key Vault, Log Analytics, managed identity, RBAC) + main.bicepparam. Validated with az bicep build.
