@@ -16,18 +16,15 @@ export function DiagnosticsPanel({ callActive }: DiagnosticsPanelProps) {
   const [framesIn, setFramesIn] = useState(0)
   const [framesOut, setFramesOut] = useState(0)
   const [elapsed, setElapsed] = useState(0)
+  const [showDiagnostics, setShowDiagnostics] = useState(false)
 
-  // Diagnostics WebSocket
   const { lastMessage: diagMsg } = useWebSocket('/ws/diagnostics', true)
-  // Call status WebSocket
   const { lastMessage: statusMsg } = useWebSocket('/ws/call-status', true)
 
-  // Process diagnostic events
   useEffect(() => {
     if (!diagMsg) return
     if (diagMsg.type === 'ping') return
 
-    // History replay
     if (diagMsg.type === 'history' && Array.isArray(diagMsg.events)) {
       setEvents(diagMsg.events)
       return
@@ -35,16 +32,14 @@ export function DiagnosticsPanel({ callActive }: DiagnosticsPanelProps) {
 
     const event = diagMsg as DiagnosticEvent
 
-    // Update audio levels for waveform
     if (event.type === 'audio.inbound') {
       setCallerLevel(Math.min(1, (event.data.frames || 0) / 100))
     } else if (event.type === 'audio.outbound') {
       setAgentLevel(Math.min(1, (event.data.frames || 0) / 50))
     } else if (event.type === 'audio.barge_in') {
-      setAgentLevel(0) // Visual feedback for interruption
+      setAgentLevel(0)
     }
 
-    // Add displayable events to log (skip raw audio metrics)
     const logTypes = [
       'transcript.user', 'transcript.agent', 'audio.barge_in',
       'call.started', 'call.ended', 'vl.session.ready', 'vl.error',
@@ -56,7 +51,6 @@ export function DiagnosticsPanel({ callActive }: DiagnosticsPanelProps) {
     }
   }, [diagMsg])
 
-  // Process call status
   useEffect(() => {
     if (!statusMsg) return
     const status = statusMsg as CallStatus
@@ -69,7 +63,6 @@ export function DiagnosticsPanel({ callActive }: DiagnosticsPanelProps) {
     }
   }, [statusMsg])
 
-  // Decay audio levels when no new data
   useEffect(() => {
     const interval = setInterval(() => {
       setCallerLevel(prev => prev * 0.85)
@@ -79,24 +72,50 @@ export function DiagnosticsPanel({ callActive }: DiagnosticsPanelProps) {
   }, [])
 
   return (
-    <div className="flex flex-col h-full gap-2">
-      <h2 className="text-xs font-medium text-gray-400 uppercase tracking-wide">Live Diagnostics</h2>
-
-      {/* Waveform — ~45% */}
-      <div className="h-[45%] min-h-[120px]">
+    <div className="relative h-full flex flex-col">
+      {/* Waveform — always visible, fills the space */}
+      <div className="flex-1 min-h-0 relative">
         <WaveformDisplay
           callerLevel={callerLevel}
           agentLevel={agentLevel}
           active={callActive}
         />
-      </div>
 
-      {/* Metrics bar */}
-      <MetricsBar framesIn={framesIn} framesOut={framesOut} elapsed={elapsed} />
+        {/* Toggle button — top right corner of waveform */}
+        {!showDiagnostics && (
+          <button
+            onClick={() => setShowDiagnostics(true)}
+            className="absolute top-2 right-2 px-2.5 py-1 text-[10px] font-medium text-gray-400 bg-gray-900/70 border border-gray-700 rounded hover:text-white hover:border-gray-500 transition-colors backdrop-blur-sm"
+          >
+            Show Diagnostics
+          </button>
+        )}
 
-      {/* Event log — remaining space */}
-      <div className="flex-1 min-h-0 border border-gray-800 rounded bg-gray-900/50 overflow-hidden">
-        <EventLog events={events} />
+        {/* Diagnostics overlay */}
+        {showDiagnostics && (
+          <div className="absolute inset-0 bg-gray-950/85 backdrop-blur-sm rounded flex flex-col p-3 gap-2 overflow-hidden">
+            {/* Close button */}
+            <div className="flex items-center justify-between shrink-0">
+              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">
+                Diagnostics
+              </span>
+              <button
+                onClick={() => setShowDiagnostics(false)}
+                className="text-gray-500 hover:text-white text-sm transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Metrics */}
+            <MetricsBar framesIn={framesIn} framesOut={framesOut} elapsed={elapsed} />
+
+            {/* Event log — fills remaining space */}
+            <div className="flex-1 min-h-0 border border-gray-800 rounded bg-gray-900/50 overflow-hidden">
+              <EventLog events={events} />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

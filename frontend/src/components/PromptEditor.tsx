@@ -6,9 +6,10 @@ interface PromptEditorProps {
   onPromptChange: (systemPrompt: string, callBrief: string) => void
   selectedScenario: PromptSet | null
   onScenarioChange: (scenario: PromptSet | null) => void
+  demoScenarios?: PromptSet[] | null
 }
 
-export function PromptEditor({ onPromptChange, selectedScenario, onScenarioChange }: PromptEditorProps) {
+export function PromptEditor({ onPromptChange, selectedScenario, onScenarioChange, demoScenarios }: PromptEditorProps) {
   const [scenarios, setScenarios] = useState<PromptSet[]>([])
   const [systemPrompt, setSystemPrompt] = useState('')
   const [callBrief, setCallBrief] = useState('')
@@ -46,6 +47,13 @@ export function PromptEditor({ onPromptChange, selectedScenario, onScenarioChang
         onScenarioChange(list[0])
       }
     } catch (err) {
+      // Fallback to demo scenarios if backend unavailable
+      if (demoScenarios && demoScenarios.length > 0) {
+        setScenarios(demoScenarios)
+        if (!selectedScenario) {
+          onScenarioChange(demoScenarios[0])
+        }
+      }
       console.error('Failed to load scenarios:', err)
     }
   }
