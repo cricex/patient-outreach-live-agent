@@ -56,6 +56,11 @@ class Settings(BaseModel):
     voicelive_vad_prefix_padding_ms: int = 300
     voicelive_vad_silence_duration_ms: int = 500
 
+    # ── Foundry inference (prompt generation via chat completions) ─────
+    foundry_inference_endpoint: str | None = None
+    foundry_inference_model: str = "gpt-4o"
+    foundry_inference_api_key: str | None = None
+
     # ── Call lifecycle ──────────────────────────────────────────────────
     call_timeout_sec: int = 90
     call_idle_timeout_sec: int = 90
@@ -152,6 +157,10 @@ def load_settings() -> Settings:
         voicelive_vad_threshold=float(os.getenv("VOICELIVE_VAD_THRESHOLD", "0.5")),
         voicelive_vad_prefix_padding_ms=int(os.getenv("VOICELIVE_VAD_PREFIX_PADDING_MS", "300")),
         voicelive_vad_silence_duration_ms=int(os.getenv("VOICELIVE_VAD_SILENCE_DURATION_MS", "500")),
+        # Foundry inference
+        foundry_inference_endpoint=os.getenv("FOUNDRY_INFERENCE_ENDPOINT"),
+        foundry_inference_model=os.getenv("FOUNDRY_INFERENCE_MODEL", "gpt-4o"),
+        foundry_inference_api_key=os.getenv("FOUNDRY_INFERENCE_API_KEY"),
         # Call lifecycle
         call_timeout_sec=int(os.getenv("CALL_TIMEOUT_SEC", "90")),
         call_idle_timeout_sec=int(

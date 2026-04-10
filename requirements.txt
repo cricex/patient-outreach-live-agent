@@ -13,3 +13,6 @@ azure-identity>=1.15.0
 
 # Voice Live GA SDK
 azure-ai-voicelive==1.1.0
+
+# Azure AI Inference (Foundry chat completions for prompt generation)
+azure-ai-inference>=1.0.0

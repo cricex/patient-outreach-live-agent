@@ -1,6 +1,6 @@
 """REST API endpoints for the React frontend.
 
-Provides prompt set CRUD and (future) LLM prompt generation.
+Provides prompt set CRUD and LLM-powered prompt generation.
 """
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import logging
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from ..services.inference import generate_scenario
 from ..services.prompt_store import (
     PromptSet,
     delete_prompt,
@@ -53,11 +54,11 @@ async def delete_prompt_set(prompt_id: str):
     return {"ok": True, "deleted": prompt_id}
 
 
-# ---- Prompt Generation (placeholder for Phase 2 LLM integration) ----
+# ---- Prompt Generation (Azure AI Foundry) ----
 
 
 class GeneratePromptRequest(BaseModel):
-    """Request to generate a system prompt from a scenario description."""
+    """Request to generate a system prompt and call brief from a scenario description."""
 
     scenario: str
     tone: str = "warm and professional"
@@ -65,7 +66,7 @@ class GeneratePromptRequest(BaseModel):
 
 
 class GeneratePromptResponse(BaseModel):
-    """Generated system prompt draft."""
+    """Generated system prompt and call brief."""
 
     system_prompt: str
     call_brief: str
@@ -73,29 +74,20 @@ class GeneratePromptResponse(BaseModel):
 
 @router.post("/prompts/generate", response_model=GeneratePromptResponse)
 async def generate_prompt(req: GeneratePromptRequest):
-    """Generate a system prompt from a scenario description.
+    """Generate a system prompt and call brief from a scenario description.
 
-    Currently returns a template-based draft. Phase 2+ will call Azure OpenAI.
+    Uses Azure AI Foundry inference to produce contextually appropriate
+    voice agent instructions and synthetic call data.
     """
-    system_prompt = f"""BEGIN SYSTEM
-ROLE: Scheduling assistant for Microsoft Health Clinic. Goal: help the patient schedule care.
-LANGUAGE: {req.language} only. Plain text. No emojis.
-STYLE: {req.tone}. 8-18 words per turn. Contractions OK.
-PRIVACY: First name only. Share details after identity confirmed.
-
-SCENARIO: {req.scenario}
-
-FLOW: greet → confirm identity → purpose → answer Qs → schedule → confirm → close.
-ONE QUESTION RULE: Ask one question at a time.
-SAFETY: No diagnoses. Urgent symptoms → advise emergency services.
-END SYSTEM"""
-
-    call_brief = f"""BEGIN CALL_BRIEF
-TOP_NEED: (fill in based on scenario)
-PRIORITY: routine
-PATIENT_NAME: (patient first name)
-TIMING: next 2-4 weeks
-WHY: {req.scenario}
-END CALL_BRIEF"""
-
-    return GeneratePromptResponse(system_prompt=system_prompt, call_brief=call_brief)
+    try:
+        result = await generate_scenario(
+            scenario_description=req.scenario,
+            tone=req.tone,
+            language=req.language,
+        )
+        return GeneratePromptResponse(
+            system_prompt=result["system_prompt"],
+            call_brief=result["call_brief"],
+        )
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc))

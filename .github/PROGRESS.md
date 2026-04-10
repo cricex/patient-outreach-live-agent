@@ -114,8 +114,10 @@
 ## Log
 
 <!-- Entries prepended newest-first -->
-- **00:07 UTC** — Phase 2+3 started, 10 tasks decomposed across 4 waves
-- **00:02 UTC** — Phase 1 committed on `v2` branch (`22c6512`)
+- **00:41 UTC** — Phase 2+3 committed (`05def4f`), starting AI prompt generation feature
+- **00:25 UTC** — Wave 3 dispatched (config panel, call controls, diagnostics panel)
+- **00:15 UTC** — Wave 2 complete (api router, diag router, event wiring)
+- **00:10 UTC** — Wave 1 complete (prompt store, event bus, React scaffold)
 - **23:40 UTC** — ✅ `p1-config` done — config.py rebuilt (removed 8 legacy fields, added 7 GA fields)
 - **23:38 UTC** — ✅ `p1-structure` done — directories created (routers/, services/, models/, data/prompts/)
 - **23:37 UTC** — ✅ `p1-deps` done — requirements.txt pinned (voicelive==1.1.0, added azure-identity)
