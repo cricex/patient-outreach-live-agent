@@ -2,6 +2,13 @@
 
 > Auto-updated as work progresses. Each entry includes timestamp, task ID, and outcome.
 
+## UX Fixes
+
+| Task | Status | Notes |
+|------|--------|-------|
+| Phone number input E.164 fix | ✅ | Auto-strips non-digit chars (except leading +), `type="tel"`, placeholder `+15551234567`, helper label. `CallControls.tsx` — 2025-07-17 |
+| Waveform display realism fix | ✅ | Backend emits `audio.rms` events with real PCM RMS levels (caller every ~100ms, agent per frame). Frontend uses `audio.rms` instead of frame-count events. WaveformDisplay renders centered mirrored bars with jitter for natural look. `speech.py`, `DiagnosticsPanel.tsx`, `WaveformDisplay.tsx` — 2025-07-24 |
+
 ## Status Legend
 ✅ Done | 🔄 In Progress | ⏳ Pending | ❌ Failed | 🚫 Blocked
 

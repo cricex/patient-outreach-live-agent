@@ -97,13 +97,25 @@ export function CallControls({ systemPrompt, callBrief }: CallControlsProps) {
 
       {/* Phone number */}
       <input
-        type="text"
+        type="tel"
         value={phoneNumber}
-        onChange={(e) => setPhoneNumber(e.target.value)}
-        placeholder="+1 (555) 123-4567"
-        className="bg-gray-800 border border-gray-700 text-gray-100 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+        onChange={(e) => {
+          let val = e.target.value
+          if (val.startsWith('+')) {
+            val = '+' + val.slice(1).replace(/\D/g, '')
+          } else if (val.length > 0) {
+            val = val.replace(/\D/g, '')
+            if (val.length > 0) val = '+' + val
+          }
+          setPhoneNumber(val)
+        }}
+        placeholder="+15551234567"
+        className="bg-gray-800 border border-gray-700 text-gray-100 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-blue-500"
         disabled={isActive}
       />
+      <p className="text-[10px] text-gray-600 mt-0.5">
+        E.164 format (+1XXXXXXXXXX). Leave blank to use default.
+      </p>
 
       {/* Voice + Model row */}
       <div className="flex gap-2">

@@ -60,6 +60,19 @@ def _downsample_24k_to_16k(pcm_24k: bytes) -> bytes:
     return samples_out.tobytes()
 
 
+def _calculate_rms(pcm_bytes: bytes) -> float:
+    """Calculate normalized RMS (0.0-1.0) of PCM16 audio."""
+    if len(pcm_bytes) < 2:
+        return 0.0
+    samples = array.array("h")
+    samples.frombytes(pcm_bytes)
+    if not samples:
+        return 0.0
+    sum_sq = sum(s * s for s in samples)
+    rms = (sum_sq / len(samples)) ** 0.5
+    return min(1.0, rms / 16384.0)  # Normalize: 16384 = half of int16 max
+
+
 def _upsample_16k_to_24k(pcm_16k: bytes) -> bytes:
     """Upsample 16kHz PCM16 mono to 24kHz using linear interpolation.
 
@@ -229,6 +242,10 @@ class SpeechService:
             upsampled = _upsample_16k_to_24k(pcm_bytes)
             await self._connection.input_audio_buffer.append(audio=upsampled)
             self._inbound_frame_count += 1
+            # Emit RMS for waveform visualization every 5 frames (~100ms)
+            if self._inbound_frame_count % 5 == 0:
+                rms = _calculate_rms(pcm_bytes)
+                event_bus.emit(EventType.AUDIO_RMS, channel="caller", rms=rms, session_id=self.session_id)
             if self._inbound_frame_count >= 50:
                 event_bus.emit(EventType.AUDIO_INBOUND, frames=self._inbound_frame_count, session_id=self.session_id)
                 self._inbound_frame_count = 0
@@ -354,3 +371,6 @@ class SpeechService:
             if len(self._output_queue) == self._output_queue.maxlen:
                 self._output_queue.popleft()
             self._output_queue.append(frame_16k)
+            # Emit RMS for agent waveform
+            rms = _calculate_rms(frame_16k)
+            event_bus.emit(EventType.AUDIO_RMS, channel="agent", rms=rms, session_id=self.session_id)
