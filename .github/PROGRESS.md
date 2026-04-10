@@ -114,7 +114,8 @@
 ## Log
 
 <!-- Entries prepended newest-first -->
-- **2026-04-10 13:45 UTC** — GitHub Actions CI/CD: ci.yml (pytest + frontend lint/build on push/PR), deploy.yml (Docker → ACR → Container Apps on merge to main)
+- **2025-07-18 19:30 UTC** — First Azure deployment: Bicep provisioned (Container Apps Environment, ACR, Key Vault, Log Analytics, managed identity), Docker image pushed to voiceagentdevacr.azurecr.io, Container App live at https://voiceagent-dev-app.ambitiouspond-82878311.eastus2.azurecontainerapps.io — /health and /status verified
+- **2026-04-10 13:45 UTC**— GitHub Actions CI/CD: ci.yml (pytest + frontend lint/build on push/PR), deploy.yml (Docker → ACR → Container Apps on merge to main)
 - **2026-04-10 13:40 UTC** — Bicep infrastructure: infra/main.bicep (Container Apps, ACR, Key Vault, Log Analytics, managed identity, RBAC) + main.bicepparam. Validated with az bicep build.
 - **2026-04-10 13:35 UTC** — Docker: multi-stage Dockerfile (node:20-alpine → python:3.12-slim), .dockerignore, docker-compose.yml
 - **2026-04-10 13:32 UTC** — Pytest test suite: 23 tests across 5 files (health, prompt CRUD, event bus, simulate call). Added pytest + pytest-asyncio.
