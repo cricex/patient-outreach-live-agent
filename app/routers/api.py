@@ -69,6 +69,7 @@ class GeneratePromptRequest(BaseModel):
 class GeneratePromptResponse(BaseModel):
     """Generated system prompt and call brief."""
 
+    scenario_title: str = ""
     system_prompt: str
     call_brief: str
 
@@ -87,6 +88,7 @@ async def generate_prompt(req: GeneratePromptRequest):
             language=req.language,
         )
         return GeneratePromptResponse(
+            scenario_title=result.get("scenario_title", ""),
             system_prompt=result["system_prompt"],
             call_brief=result["call_brief"],
         )

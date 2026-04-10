@@ -116,6 +116,7 @@ async def generate_scenario(
             )
 
         return {
+            "scenario_title": result.get("scenario_title", ""),
             "system_prompt": result["system_prompt"],
             "call_brief": result["call_brief"],
         }

@@ -62,9 +62,12 @@ export function PromptEditor({ onPromptChange, selectedScenario, onScenarioChang
     setGenerating(true)
     setGenerateError(null)
     try {
-      const result = await api.generatePrompt({ scenario: generateInput }) as { system_prompt: string; call_brief: string }
+      const result = await api.generatePrompt({ scenario: generateInput }) as { scenario_title?: string; system_prompt: string; call_brief: string }
       setSystemPrompt(result.system_prompt)
       setCallBrief(result.call_brief)
+      if (result.scenario_title) {
+        setScenarioName(result.scenario_title)
+      }
     } catch (err: any) {
       const msg = err?.message || 'Generation failed'
       setGenerateError(msg)
