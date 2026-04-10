@@ -64,6 +64,7 @@ class Settings(BaseModel):
     # ── Call lifecycle ──────────────────────────────────────────────────
     call_timeout_sec: int = 90
     call_idle_timeout_sec: int = 90
+    enable_call_recording: bool = False
 
     # ── Media bridge ────────────────────────────────────────────────────
     media_bidirectional: bool = True
@@ -166,6 +167,7 @@ def load_settings() -> Settings:
         call_idle_timeout_sec=int(
             os.getenv("CALL_IDLE_TIMEOUT_SEC", os.getenv("CALL_TIMEOUT_SEC", "90"))
         ),
+        enable_call_recording=_env_bool("ENABLE_CALL_RECORDING", "false"),
         # Media bridge
         media_bidirectional=_env_bool("MEDIA_BIDIRECTIONAL", "true"),
         media_start_at_create=_env_bool("MEDIA_START_AT_CREATE", "true"),

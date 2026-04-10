@@ -1,5 +1,16 @@
 # Copilot Instructions — Live Voice Agent Studio (v2)
 
+## When working on implementation tasks:
+1. Start with a concrete implementation plan.
+2. Match existing repository patterns and keep changes tightly scoped.
+3. Prefer /fleet only when workstreams are truly independent.
+4. Rejoin with a final integration pass.
+5. Run relevant build, test, lint, and type checks before finishing when available.
+6. If anything cannot be validated, state the gap and risk clearly.
+
+## Update files
+Always update .github/PROGRESS.md with a timestamped log of what was completed.
+
 > Realtime voice agent demo platform using Azure Communication Services (ACS) and Azure AI Voice Live. Supports any industry — healthcare patient outreach, prior authorization, insurance, legal, retail, and more. **Not HIPAA-compliant — synthetic data only.**
 
 ## Run commands

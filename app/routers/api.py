@@ -9,6 +9,7 @@ import logging
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from ..services.call_history import delete_call, get_call, list_calls
 from ..services.inference import generate_scenario
 from ..services.prompt_store import (
     PromptSet,
@@ -91,3 +92,29 @@ async def generate_prompt(req: GeneratePromptRequest):
         )
     except RuntimeError as exc:
         raise HTTPException(503, str(exc))
+
+
+# ---- Call History ----
+
+
+@router.get("/calls")
+async def list_call_history():
+    """List all past calls (metadata only, no full transcripts)."""
+    return list_calls()
+
+
+@router.get("/calls/{call_id}")
+async def get_call_record(call_id: str):
+    """Get a complete call record including transcript."""
+    record = get_call(call_id)
+    if not record:
+        raise HTTPException(404, f"Call '{call_id}' not found")
+    return record
+
+
+@router.delete("/calls/{call_id}")
+async def delete_call_record(call_id: str):
+    """Delete a call record."""
+    if not delete_call(call_id):
+        raise HTTPException(404, f"Call '{call_id}' not found")
+    return {"ok": True, "deleted": call_id}

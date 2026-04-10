@@ -22,6 +22,7 @@ from azure.core.credentials import AzureKeyCredential
 
 from ..config import settings
 from ..services.event_bus import event_bus, EventType
+from .call_history import call_history
 
 logger = logging.getLogger("app.voice")
 
@@ -265,11 +266,13 @@ class SpeechService:
                     transcript = getattr(event, "transcript", "")
                     if transcript:
                         event_bus.emit(EventType.TRANSCRIPT_USER, text=transcript, session_id=self.session_id)
+                        call_history.add_transcript_turn("user", transcript)
 
                 elif etype == ServerEventType.RESPONSE_AUDIO_TRANSCRIPT_DONE:
                     transcript = getattr(event, "transcript", "")
                     if transcript:
                         event_bus.emit(EventType.TRANSCRIPT_AGENT, text=transcript, session_id=self.session_id)
+                        call_history.add_transcript_turn("agent", transcript)
 
         except asyncio.CancelledError:
             pass

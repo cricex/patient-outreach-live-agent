@@ -16,6 +16,7 @@ from azure.communication.callautomation import (
     MediaStreamingContentType,
     MediaStreamingOptions,
     PhoneNumberIdentifier,
+    ServerCallLocator,
     StreamingTransportType,
 )
 from azure.core.exceptions import AzureError
@@ -23,6 +24,7 @@ from azure.core.exceptions import AzureError
 from ..config import settings
 from ..models.state import AppState, app_state
 from .call_session import CallSession
+from .call_history import call_history
 from ..services.event_bus import event_bus, EventType
 
 logger = logging.getLogger("app.call")
@@ -38,6 +40,7 @@ class CallManager:
     def __init__(self) -> None:
         self._session: CallSession | None = None
         self._hangup_future: asyncio.Future | None = None
+        self._recording_id: str | None = None
 
     @property
     def current_session(self) -> CallSession | None:
@@ -91,6 +94,14 @@ class CallManager:
 
         # Create session and start Voice Live
         await app_state.begin_call(call_id, prompt)
+        call_history.begin_call(
+            call_id=call_id,
+            destination=dest or "SIMULATED",
+            system_prompt=prompt,
+            voice=settings.voicelive_voice,
+            model=settings.voicelive_model,
+            simulated=simulate,
+        )
         event_bus.emit(EventType.CALL_STARTED, call_id=call_id, destination=dest or "SIMULATED")
         self._session = CallSession(call_id, app_state)
 
@@ -140,6 +151,31 @@ class CallManager:
                 except Exception as exc:
                     logger.warning("start_media_streaming failed: %s", exc)
 
+            # Start recording if enabled
+            if settings.enable_call_recording:
+                try:
+                    client = self._acs_client()
+                    loop = asyncio.get_running_loop()
+                    server_call_id = data.get("serverCallId")
+                    if server_call_id:
+                        recording_resp = await loop.run_in_executor(
+                            None,
+                            lambda: client.start_recording(
+                                call_locator=ServerCallLocator(server_call_id),
+                            ),
+                        )
+                        self._recording_id = getattr(
+                            recording_resp, "recording_id", None
+                        )
+                        if self._recording_id:
+                            call_history.set_recording_id(self._recording_id)
+                            logger.info(
+                                "Recording started recording_id=%s",
+                                self._recording_id,
+                            )
+                except Exception as exc:
+                    logger.warning("Failed to start recording: %s", exc)
+
         elif event_type.endswith("MediaStreamingStarted"):
             app_state.media.started = True
 
@@ -169,8 +205,24 @@ class CallManager:
             except Exception:
                 logger.debug("ACS hangup failed (continuing)")
 
+        # Stop recording if active
+        if self._recording_id:
+            try:
+                client = self._acs_client()
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(
+                    None, lambda: client.stop_recording(self._recording_id)
+                )
+                logger.info(
+                    "Recording stopped recording_id=%s", self._recording_id
+                )
+            except Exception as exc:
+                logger.warning("Failed to stop recording: %s", exc)
+            self._recording_id = None
+
         event_bus.emit(EventType.CALL_ENDED, call_id=actual_id, reason=reason)
         await self._session.stop(reason)
+        call_history.end_call(reason)
         self._session = None
         event_bus.clear()
 
