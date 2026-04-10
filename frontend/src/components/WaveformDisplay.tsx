@@ -49,28 +49,32 @@ export function WaveformDisplay({ callerLevel, agentLevel, active }: WaveformDis
       ctx.lineTo(w, halfH)
       ctx.stroke()
 
-      const barWidth = 3
+      const barWidth = 2
       const gap = 1
       const step = barWidth + gap
       const maxBars = Math.floor(w / step)
 
-      // Draw caller waveform (top half, blue)
+      // Caller waveform (top half, centered vertically)
       const callerData = callerHistory.current.slice(-maxBars)
+      const callerCenterY = halfH / 2
       ctx.fillStyle = '#60a5fa' // blue-400
       for (let i = 0; i < callerData.length; i++) {
         const x = w - (callerData.length - i) * step
-        const barH = Math.max(1, callerData[i] * (halfH - 20))
-        const y = halfH - 10 - barH
+        const jitter = 0.9 + Math.random() * 0.2
+        const barH = Math.max(1, callerData[i] * (halfH - 10) * jitter)
+        const y = callerCenterY - barH / 2
         ctx.fillRect(x, y, barWidth, barH)
       }
 
-      // Draw agent waveform (bottom half, green)
+      // Agent waveform (bottom half, centered vertically)
       const agentData = agentHistory.current.slice(-maxBars)
+      const agentCenterY = halfH + halfH / 2
       ctx.fillStyle = '#4ade80' // green-400
       for (let i = 0; i < agentData.length; i++) {
         const x = w - (agentData.length - i) * step
-        const barH = Math.max(1, agentData[i] * (halfH - 20))
-        const y = halfH + 10
+        const jitter = 0.9 + Math.random() * 0.2
+        const barH = Math.max(1, agentData[i] * (halfH - 10) * jitter)
+        const y = agentCenterY - barH / 2
         ctx.fillRect(x, y, barWidth, barH)
       }
 

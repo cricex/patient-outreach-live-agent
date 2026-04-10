@@ -9,7 +9,8 @@ export function useWebSocket(url: string, enabled: boolean = true) {
     if (!enabled) return
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${protocol}//${window.location.host}${url}`
+    const token = sessionStorage.getItem('authToken')
+    const wsUrl = `${protocol}//${window.location.host}${url}${token ? `?token=${token}` : ''}`
 
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws

@@ -32,10 +32,13 @@ export function DiagnosticsPanel({ callActive }: DiagnosticsPanelProps) {
 
     const event = diagMsg as DiagnosticEvent
 
-    if (event.type === 'audio.inbound') {
-      setCallerLevel(Math.min(1, (event.data.frames || 0) / 100))
-    } else if (event.type === 'audio.outbound') {
-      setAgentLevel(Math.min(1, (event.data.frames || 0) / 50))
+    if (event.type === 'audio.rms') {
+      const rms = event.data.rms || 0
+      if (event.data.channel === 'caller') {
+        setCallerLevel(rms)
+      } else if (event.data.channel === 'agent') {
+        setAgentLevel(rms)
+      }
     } else if (event.type === 'audio.barge_in') {
       setAgentLevel(0)
     }

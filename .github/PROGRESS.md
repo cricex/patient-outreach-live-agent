@@ -2,6 +2,19 @@
 
 > Auto-updated as work progresses. Each entry includes timestamp, task ID, and outcome.
 
+## Infrastructure Fixes
+
+| Task | Status | Notes |
+|------|--------|-------|
+| Replace Azure OpenAI with Foundry AIServices | ✅ | Deleted `voiceagent-dev-openai` (kind: OpenAI), created `voiceagent-dev-foundry` (kind: AIServices) in eastus2. Deployed `gpt-4.1-mini` (GlobalStandard). Endpoint: `https://voiceagent-dev-foundry.services.ai.azure.com/models`. Removed incorrect `api_version` from `ChatCompletionsClient` in `inference.py`. Updated `.env` + Container App env vars. All 30 tests pass. — 2026-04-10 |
+
+## UX Fixes
+
+| Task | Status | Notes |
+|------|--------|-------|
+| Phone number input E.164 fix | ✅ | Auto-strips non-digit chars (except leading +), `type="tel"`, placeholder `+15551234567`, helper label. `CallControls.tsx` — 2025-07-17 |
+| Waveform display realism fix | ✅ | Backend emits `audio.rms` events with real PCM RMS levels (caller every ~100ms, agent per frame). Frontend uses `audio.rms` instead of frame-count events. WaveformDisplay renders centered mirrored bars with jitter for natural look. `speech.py`, `DiagnosticsPanel.tsx`, `WaveformDisplay.tsx` — 2025-07-24 |
+
 ## Status Legend
 ✅ Done | 🔄 In Progress | ⏳ Pending | ❌ Failed | 🚫 Blocked
 
@@ -114,7 +127,13 @@
 ## Log
 
 <!-- Entries prepended newest-first -->
+- **2026-04-10 20:45 UTC** — v2 fully deployed and merged to main: Frontend build successful (216 KB JS, 19 KB CSS gzip), Docker image built, pushed to ACR (digest sha256:c713d912...), Container App updated + verified health endpoint. v2 merged to main with commit message detailing all features (voice calls, React UI, AI generation, auth, transcripts). Tagged as v2.1.0.
 - **2026-04-10 14:35 UTC** — v2 merged to main, tagged `v2.0.0`. 87 files changed, +8224 / -2280 lines.
+- **2025-07-25 UTC** — Auth security hardening (6 fixes): (1) Middleware returns 401 JSONResponse instead of raising HTTPException/500. (2) Removed dead WebSocket code from middleware; added `_ws_auth()` guard in `ws.py` before `accept()`. (3) Auth fails-closed — `_auth_enabled` flag; no env var = auth disabled, `DEMO_PASSWORDS=` empty = rejects all. (4) `data/calls/*.json` added to `.gitignore`, tracked files unstaged. (5) Static/SPA paths exempted via `_is_public()` (assets, root, static file extensions). (6) Session tokens — `create_session_token()` returns opaque `secrets.token_urlsafe`; raw passwords never leave the `/auth/validate` endpoint. Frontend stores token, WS sends token. `conftest.py` pops DEMO_PASSWORDS so tests run with auth disabled.
+- **2025-07-25 UTC** — Shared-password auth gate: `app/auth.py` (Key Vault + env fallback), `AuthMiddleware` on all routes (except /health, /auth/validate, /call/events), `POST /auth/validate` endpoint, `LoginScreen.tsx` frontend gate, `client.ts` sends `X-Auth-Token` header + 401 handling, `useWebSocket.ts` token query param, `azure-keyvault-secrets` added to requirements. Tests disabled auth via `DEMO_PASSWORDS=""` in conftest. 30/30 tests passing, tsc + vite build clean.
+- **2025-07-20 UTC** — Added 7 resampling unit tests (`tests/test_resample.py`): downsample/upsample sample counts, roundtrip length, int16 range, empty/tiny input. Full suite 30/30 passing.
+- **2025-07-19 UTC** — Env diagnostics: all config values valid (ACS conn str, phone numbers, APP_BASE_URL HTTPS, VL endpoint/key/model). ACS client creates OK. Voice Live connect+session.update OK. Root cause of 502: `aiohttp` missing from requirements.txt (needed by `azure-ai-voicelive.aio`). Fixed: added `aiohttp>=3.9.0` to requirements.txt. Also installed missing `azure-identity` in local venv.
+- **2026-07-12 UTC** — HTTPS tunnel: reused `swift-hill-t9dzp4x` devtunnel (port 8000/http, anonymous access), public URL `https://n3st3xsb-8000.usw2.devtunnels.ms`, updated `.env.local` with `APP_BASE_URL`, tunnel hosting as background process (PID 30964)
 - **2025-07-18 19:30 UTC** — First Azure deployment: Bicep provisioned (Container Apps Environment, ACR, Key Vault, Log Analytics, managed identity), Docker image pushed to voiceagentdevacr.azurecr.io, Container App live at https://voiceagent-dev-app.ambitiouspond-82878311.eastus2.azurecontainerapps.io — /health and /status verified
 - **2026-04-10 13:45 UTC**— GitHub Actions CI/CD: ci.yml (pytest + frontend lint/build on push/PR), deploy.yml (Docker → ACR → Container Apps on merge to main)
 - **2026-04-10 13:40 UTC** — Bicep infrastructure: infra/main.bicep (Container Apps, ACR, Key Vault, Log Analytics, managed identity, RBAC) + main.bicepparam. Validated with az bicep build.
@@ -136,3 +155,5 @@
 - **23:35 UTC** — Phase 1 started, progress log created
 
 - **2026-04-10 13:34 UTC** — ✅ CI/CD workflows created: `ci.yml` (test + lint on push/PR) and `deploy.yml` (Docker build + Container Apps deploy on main)
+- **2026-04-10 18:00 UTC** — Auth gate deployed to Azure: Key Vault secret (demo-passwords) configured with RBAC, Docker image pushed to ACR (voiceagentdevacr), Container App updated with DEMO_PASSWORDS fallback env var. Verified: /health OK, /status returns 401, /auth/validate accepts valid password. 6 security fixes from adversarial review.
+- **2026-04-10 18:27 UTC** — Azure OpenAI provisioned for AI scenario generation: created `voiceagent-dev-openai` (OpenAI S0, eastus2) with custom subdomain, deployed gpt-4o (GlobalStandard, 10K TPM). Updated .env with FOUNDRY_INFERENCE_ENDPOINT/MODEL/API_KEY. Container App env vars updated. Frontend PromptEditor.tsx: added generateError state + visible red error text below generate button. TypeScript compiles clean.
