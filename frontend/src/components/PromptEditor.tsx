@@ -126,6 +126,15 @@ export function PromptEditor({ onPromptChange, selectedScenario, onScenarioChang
 
   return (
     <div className="flex flex-col h-full gap-3">
+      {/* Scenario title — prominent, always visible */}
+      <input
+        type="text"
+        value={scenarioName}
+        onChange={(e) => setScenarioName(e.target.value)}
+        placeholder="Scenario name..."
+        className="bg-transparent text-lg font-semibold text-white border-none outline-none placeholder-gray-600 shrink-0 px-0"
+      />
+
       {/* AI Scenario Generator — primary input */}
       <div className="shrink-0">
         <label className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1.5 block">
@@ -156,15 +165,6 @@ export function PromptEditor({ onPromptChange, selectedScenario, onScenarioChang
         <span className="text-[10px] text-gray-600 uppercase tracking-widest">or edit directly</span>
         <div className="flex-1 h-px bg-gray-800" />
       </div>
-
-      {/* Scenario name */}
-      <input
-        type="text"
-        value={scenarioName}
-        onChange={(e) => setScenarioName(e.target.value)}
-        placeholder="Scenario name..."
-        className="bg-gray-800 border border-gray-700 text-gray-100 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500 shrink-0"
-      />
 
       {/* System Prompt */}
       <div className="flex-1 flex flex-col min-h-0">
