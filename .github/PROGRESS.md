@@ -114,6 +114,7 @@
 ## Log
 
 <!-- Entries prepended newest-first -->
+- **01:40 UTC** — UI polish committed: mockup-aligned layout, diagnostics overlay toggle, demo mode for preview without backend
 - **01:25 UTC** — Call history committed (`6be4d81`): transcripts, ACS recording, /api/calls endpoints
 - **01:10 UTC** — Comprehensive copilot-instructions.md rewrite (covers all P1-P3 + AI gen)
 - **00:50 UTC** — AI prompt generation committed (`a87b036`): inference service, meta-prompt, prior-auth scenario
