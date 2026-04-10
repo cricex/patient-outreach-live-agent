@@ -15,7 +15,7 @@ azure-identity>=1.15.0
 azure-ai-voicelive==1.1.0
 
 # Azure AI Inference (Foundry chat completions for prompt generation)
-azure-ai-inference>=1.0.0
+azure-ai-inference>=1.0.0b1
 
 # Testing
 pytest>=8.0.0
