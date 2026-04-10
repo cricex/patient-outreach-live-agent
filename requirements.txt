@@ -6,9 +6,10 @@ pydantic==2.7.3
 python-dotenv==1.0.1
 httpx==0.28.1
 
-# Azure ACS Call Automation
+# Azure Communication Services
 azure-communication-callautomation==1.5.0
 azure-core==1.35.1
+azure-identity>=1.15.0
 
 # Voice Live GA SDK
-azure-ai-voicelive
+azure-ai-voicelive==1.1.0

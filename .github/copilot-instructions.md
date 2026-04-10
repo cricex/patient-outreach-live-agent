@@ -1,4 +1,4 @@
-# Copilot Instructions — Patient Outreach Live Agent
+# Copilot Instructions — Patient Outreach Live Agent (v2)
 
 > Research PoC for preventive-care gap closure using Azure Communication Services (ACS) and Azure AI Voice Live. **Not HIPAA-compliant — synthetic data only.**
 
@@ -35,72 +35,119 @@ No tests, linting, or CI pipelines exist yet.
 [Synthetic Notes] ──► [Notebook (optional)] ──► [CALL_BRIEF]
                                               │
                                               ▼
-                                     [FastAPI Orchestrator]
-                               (state, ACS webhooks, VL session)
+                                     [FastAPI App Factory]
+                              (routers, startup, SDK version log)
                                               │
-                  ┌────────────── Control (HTTP/Webhooks) ───────────────┐
-                  │                                                      │
-          [ACS Call Automation]                                 [Azure AI Voice Live]
-          • POST /call/start (outbound)                         • WS session (gpt-realtime)
-          • POST /call/events (webhooks)                        • instructions = CALL_BRIEF
-                  │                                                      │
-                  └──────────── Media (WebSocket, PCM 16k/16-bit) ───────┘
-                                 ◄───── Media Bridge + Pacer ─────►
-                        (20 ms frames; flush-target/interval/max-interval)
+              ┌──── Routers ──────────────────┼──────────────────────────┐
+              │                               │                          │
+     routers/calls.py              routers/diagnostics.py       routers/media.py
+     • /call/start                 • /health                    • /media/{token} WS
+     • /call/hangup                • /status                         │
+     • /call/events                • /acs/health                     │
+              │                                                      │
+              ▼                                                      ▼
+     [CallManager singleton]                              [media_bridge handler]
+     • orchestrates lifecycle                             • get_speech callable (DI)
+     • owns CallSession                                   • concurrent in/out loops
+              │                                                      │
+              ▼                                                      │
+     [CallSession (per-call)]                                        │
+     • owns SpeechService                                            │
+     • timeout watcher (Future)                                      │
+     • state mutations                                               │
+              │                                                      │
+              ▼                                                      │
+     [SpeechService]                                                 │
+     • Voice Live GA 1.1.0 SDK                                       │
+     • noise reduction, echo cancel                                  │
+     • native barge-in, VAD                                          │
+              │                                                      │
+              └──────────── Media (WebSocket, PCM 16k/16-bit) ───────┘
                                               │
                                           [Phone Call]
 ```
 
 **Data flow for a live call:**
-1. `POST /call/start` → ACS places PSTN call with media streaming enabled
-2. ACS sends `CallConnected` + `MediaStreamingStarted` webhooks to `/call/events`
+1. `POST /call/start` → `CallManager` creates a `CallSession`, ACS places PSTN call with media streaming
+2. ACS sends `CallConnected` + `MediaStreamingStarted` webhooks to `/call/events` → routed to `CallManager`
 3. ACS opens WebSocket to `/media/{token}` — bidirectional 16 kHz PCM audio
-4. FastAPI opens a Voice Live WebSocket session (STT → LLM reasoning → TTS, end-to-end)
-5. `media_bridge.py` bridges audio: ACS frames → upsample 16→24 kHz → Voice Live input; Voice Live output → ACS frames
-6. Input flush logic buffers N frames before committing to Voice Live (tunable via `VOICELIVE_INPUT_FLUSH_*` env vars)
-7. Call ends via timeout, hangup, or ACS disconnect event
+4. `CallSession` opens a Voice Live session via `SpeechService` (STT → LLM reasoning → TTS, end-to-end)
+5. `media_bridge.py` bridges audio between ACS and Voice Live — SDK handles upsampling and frame formatting natively
+6. Call ends via timeout (Future-based watcher), hangup, or ACS disconnect event → `CallManager` cleans up `CallSession`
 
 **Key endpoints:**
 
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/health` | GET | Returns `"ok"` |
-| `/status` | GET | Runtime snapshot: call state, Voice Live session, media frame counts, flush metrics |
-| `/call/start` | POST | Initiate outbound call or simulate locally (`{"simulate": true}`) |
-| `/call/hangup` | POST | Terminate active call |
-| `/call/events` | POST | ACS webhook receiver (CallConnected, MediaStreamingStarted, CallDisconnected) |
-| `/media/{token}` | WS | Bidirectional ACS ↔ Voice Live audio bridge |
-| `/acs/health` | GET | ACS endpoint TLS diagnostics (DNS, cert, cipher) |
+| Endpoint | Method | Router | Purpose |
+|----------|--------|--------|---------|
+| `/health` | GET | `diagnostics` | Returns `"ok"` |
+| `/status` | GET | `diagnostics` | Runtime snapshot: call state, Voice Live session, media frame counts |
+| `/call/start` | POST | `calls` | Initiate outbound call or simulate locally (`{"simulate": true}`) |
+| `/call/hangup` | POST | `calls` | Terminate active call |
+| `/call/events` | POST | `calls` | ACS webhook receiver (CallConnected, MediaStreamingStarted, CallDisconnected) |
+| `/media/{token}` | WS | `media` | Bidirectional ACS ↔ Voice Live audio bridge |
+| `/acs/health` | GET | `diagnostics` | ACS endpoint TLS diagnostics (DNS, cert, cipher) |
 
 ## Module guide (`app/`)
 
 | Module | Role | Key exports |
 |--------|------|-------------|
 | `__init__.py` | Package init — imports `_ssl_patch` first (TLS 1.3 workaround, must load before Azure SDK) | — |
-| `main.py` | FastAPI app, all route handlers, call lifecycle, global `_speech` session management, timeout watcher | `app` (FastAPI instance) |
-| `config.py` | Pydantic `Settings` model, env loading with `python-dotenv`, validation | `settings` (singleton) |
-| `state.py` | Thread-safe `AppState` with `RLock` — tracks call metadata, Voice Live session info, media metrics | `app_state` (singleton) |
-| `speech_session.py` | `SpeechSession` class — wraps Azure AI Voice Live async SDK, manages connect/disconnect, event consumption, input flush timer, output audio queue | `SpeechSession` |
-| `media_bridge.py` | WebSocket handler for `/media/{token}` — concurrent inbound/outbound loops, frame slicing, 16→24 kHz upsampling, flush gating | `handle_media_ws()` |
-| `voice_live.py` | Legacy compatibility shim (thin wrapper) | — |
+| `main.py` | FastAPI app factory (~50 lines). Mounts routers, logs SDK versions on startup | `app` (FastAPI instance) |
+| `config.py` | Pydantic `Settings` model, env loading with `python-dotenv`, validation. Removed legacy fields (speech_key, flush timers, upsample); added GA features (noise_reduction, echo_cancellation, vad_threshold/prefix/silence) | `settings` (singleton) |
 | `logging_config.py` | Configures root logger, `RotatingFileHandler` to `logs/app.log`, console handler | `setup_logging()` |
 | `_ssl_patch.py` | Patches SSL context to allow TLS 1.3 with Azure endpoints | — |
 
-**Dependency graph:**
+### `app/routers/`
+
+| Module | Role | Key exports |
+|--------|------|-------------|
+| `calls.py` | `/call/start`, `/call/hangup`, `/call/events` routes — thin delegation to `CallManager` | `router` |
+| `diagnostics.py` | `/health`, `/status`, `/acs/health` routes | `router` |
+| `media.py` | `/media/{token}` WebSocket route — wires `get_speech` callable into media bridge | `router` |
+
+### `app/services/`
+
+| Module | Role | Key exports |
+|--------|------|-------------|
+| `call_manager.py` | Singleton orchestrating call lifecycle. Replaces v1's global `_speech` and scattered ACS logic. Creates/destroys `CallSession`, exposes `get_speech()` callable for media bridge | `call_manager` (singleton) |
+| `call_session.py` | Per-call object owning `SpeechService`, timeout watcher (Future-based), and state transitions. Created on call start, destroyed on call end | `CallSession` |
+| `speech.py` | Voice Live GA 1.1.0 wrapper (~200 lines). No manual flush timers, no upsampling, no base64 — SDK handles all of it. Supports noise reduction (`AudioNoiseReduction`), echo cancellation (`AudioEchoCancellation`), configurable VAD | `SpeechService` |
+| `media_bridge.py` | WebSocket media handler. Decoupled via dependency injection (`get_speech` callable, no circular imports). Concurrent inbound/outbound loops | `handle_media_ws()` |
+
+### `app/models/`
+
+| Module | Role | Key exports |
+|--------|------|-------------|
+| `state.py` | `CallState`, `VoiceLiveState`, `MediaMetrics` dataclasses + `AppState` singleton using `asyncio.Lock` (not `threading.RLock`) | `app_state` (singleton) |
+| `requests.py` | Pydantic request/response models for API endpoints | — |
+
+**Dependency graph (v2):**
 ```
 main.py
+  ├── routers/calls.py → services/call_manager.py
+  ├── routers/diagnostics.py → models/state.py, config.py
+  ├── routers/media.py → services/call_manager.py, services/media_bridge.py
+  └── config.py, logging_config.py
+
+services/call_manager.py
+  ├── services/call_session.py
+  │     └── services/speech.py → config.py, azure.ai.voicelive SDK
+  ├── models/state.py (app_state singleton)
+  └── ACS SDK (azure.communication.callautomation)
+
+services/media_bridge.py
   ├── config.py (settings)
-  ├── logging_config.py
-  ├── state.py (app_state)
-  ├── speech_session.py
-  │     ├── config.py
-  │     ├── state.py
-  │     └── azure.ai.voicelive.aio SDK
-  └── media_bridge.py
-        ├── config.py
-        ├── state.py
-        └── speech_session.py
+  └── models/state.py (AppState — injected)
+  (NO circular imports — get_speech callable injected by caller)
 ```
+
+### Deleted v1 files
+
+These files no longer exist and should not be referenced:
+- `app/speech_session.py` → replaced by `app/services/speech.py`
+- `app/media_bridge.py` → replaced by `app/services/media_bridge.py`
+- `app/state.py` → replaced by `app/models/state.py`
+- `app/voice_live.py` → deleted (legacy shim)
 
 ## Configuration system
 
@@ -115,6 +162,8 @@ main.py
 - `validate_voicelive()` method checks Voice Live config consistency post-load.
 - Boolean env vars: compare `.lower() == "true"`.
 - `ACS_CONNECTION_STRING` has special quote-stripping logic.
+- **v2 removals:** `speech_key`, `VOICELIVE_INPUT_FLUSH_*` timers, upsample settings.
+- **v2 additions:** `noise_reduction`, `echo_cancellation`, `vad_threshold`, `vad_prefix`, `vad_silence`.
 
 **Full env variable reference:** see `ENV.md`.
 
@@ -141,14 +190,16 @@ Hierarchical, module-based:
 ```python
 logger = logging.getLogger("app.main")    # main.py
 logger = logging.getLogger("app.media")   # media_bridge.py
-logger = logging.getLogger("app.voice")   # speech_session.py
+logger = logging.getLogger("app.voice")   # speech.py
+logger = logging.getLogger("app.call")    # call_manager.py, call_session.py
+logger = logging.getLogger("app.config")  # config.py
 ```
 Log format: `%(asctime)s %(levelname).1s %(name)s %(message)s` (single-letter level).
 
 ### Type annotations
 Python 3.10+ style with PEP 604 unions:
 ```python
-_speech: SpeechSession | None = None
+current_session: CallSession | None = None
 async def connect(self, system_prompt: str | None) -> None: ...
 async def get_next_outbound_frame(self) -> bytes | None: ...
 ```
@@ -164,11 +215,17 @@ async def get_next_outbound_frame(self) -> bytes | None: ...
 - Blocking Azure SDK calls wrapped in `loop.run_in_executor(None, ...)` to avoid blocking the event loop.
 - Media bridge runs concurrent `asyncio` tasks: one for inbound audio (ACS → Voice Live), one for outbound (Voice Live → ACS).
 - Voice Live events consumed via async iterator in a background task.
-- Input flush timer uses `asyncio.sleep()` loop.
+- State mutations use `asyncio.Lock` (async-native, not `threading.RLock`).
+- Timeout watcher sets an `asyncio.Future`; `CallManager` watches it and triggers cleanup.
 
 ### State management
-- `app_state` (state.py): Thread-safe singleton using `threading.RLock()`. Tracks call metadata, Voice Live session info, media counters. `.snapshot()` method returns a serializable dict for `/status`.
-- `_speech` (main.py): Global `SpeechSession | None` — created on call start, destroyed on call end. Managed in route handlers and timeout watcher.
+- `app_state` (`models/state.py`): Async-safe singleton using `asyncio.Lock`. Contains `CallState`, `VoiceLiveState`, `MediaMetrics` dataclasses. `.snapshot()` method returns a serializable dict for `/status`.
+- `CallManager.current_session` (`services/call_manager.py`): `CallSession | None` — replaces v1's global `_speech`. Per-call lifecycle managed by `CallManager`.
+- **No globals for call state** — all call state is owned by `CallSession`, not scattered across module-level variables.
+
+### Dependency injection
+- Media bridge receives a `get_speech` callable from the router, not a direct import. This eliminates circular imports between services.
+- `CallManager` exposes `get_speech()` which returns the current session's `SpeechService` or `None`.
 
 ### Commenting style
 - Comments explain **why**, constraints, and side effects — not what the code does.
@@ -189,7 +246,8 @@ async def get_next_outbound_frame(self) -> bytes | None: ...
 | `httpx` | 0.28.1 | Async HTTP client |
 | `azure-communication-callautomation` | 1.5.0 | ACS Call Automation SDK |
 | `azure-core` | 1.35.1 | Azure SDK foundation |
-| `azure-ai-voicelive` | (unpinned) | Voice Live GA SDK (beta) |
+| `azure-identity` | ≥1.15.0 | Entra ID authentication (new in v2) |
+| `azure-ai-voicelive` | 1.1.0 | Voice Live GA SDK (pinned — was unpinned beta in v1) |
 
 Python 3.10+ required (PEP 604 unions, `match` statements).
 
