@@ -84,7 +84,7 @@ async def generate_scenario(
             )
 
         client = ChatCompletionsClient(
-            endpoint=settings.foundry_inference_endpoint,
+            endpoint=settings.foundry_inference_endpoint.rstrip("/"),
             credential=AzureKeyCredential(api_key),
         )
 

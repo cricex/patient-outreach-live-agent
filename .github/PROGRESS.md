@@ -2,6 +2,12 @@
 
 > Auto-updated as work progresses. Each entry includes timestamp, task ID, and outcome.
 
+## Infrastructure Fixes
+
+| Task | Status | Notes |
+|------|--------|-------|
+| Replace Azure OpenAI with Foundry AIServices | ✅ | Deleted `voiceagent-dev-openai` (kind: OpenAI), created `voiceagent-dev-foundry` (kind: AIServices) in eastus2. Deployed `gpt-4.1-mini` (GlobalStandard). Endpoint: `https://voiceagent-dev-foundry.services.ai.azure.com/models`. Removed incorrect `api_version` from `ChatCompletionsClient` in `inference.py`. Updated `.env` + Container App env vars. All 30 tests pass. — 2026-04-10 |
+
 ## UX Fixes
 
 | Task | Status | Notes |
