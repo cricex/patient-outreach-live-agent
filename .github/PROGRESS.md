@@ -114,6 +114,8 @@
 ## Log
 
 <!-- Entries prepended newest-first -->
+- **01:25 UTC** — Call history committed (`6be4d81`): transcripts, ACS recording, /api/calls endpoints
+- **01:10 UTC** — Comprehensive copilot-instructions.md rewrite (covers all P1-P3 + AI gen)
 - **00:50 UTC** — AI prompt generation committed (`a87b036`): inference service, meta-prompt, prior-auth scenario
 - **00:41 UTC** — Phase 2+3 committed (`05def4f`), starting AI prompt generation feature
 - **00:25 UTC** — Wave 3 dispatched (config panel, call controls, diagnostics panel)
