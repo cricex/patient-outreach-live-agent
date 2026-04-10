@@ -21,9 +21,17 @@ router = APIRouter(prefix="/call", tags=["calls"])
 async def start_call(payload: StartCallRequest):
     """Initiate an outbound call or simulate locally."""
     try:
+        # Combine system prompt and call brief into a single instruction set
+        prompt_parts = []
+        if payload.system_prompt:
+            prompt_parts.append(payload.system_prompt)
+        if payload.call_brief:
+            prompt_parts.append(payload.call_brief)
+        combined_prompt = "\n\n".join(prompt_parts) if prompt_parts else None
+
         call_id, dest, prompt = await call_manager.start_call(
             target_phone=payload.target_phone_number,
-            system_prompt=payload.system_prompt,
+            system_prompt=combined_prompt,
             simulate=payload.simulate,
         )
     except ValueError as exc:
