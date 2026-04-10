@@ -37,15 +37,21 @@ function App() {
     setCallBrief(cb)
   }
 
-  function handleScenarioSelect(id: string) {
+  async function handleScenarioSelect(id: string) {
     if (!id) {
       setSelectedScenario(null)
       setSystemPrompt('')
       setCallBrief('')
       return
     }
-    const found = scenarios.find(s => s.id === id)
-    if (found) setSelectedScenario(found)
+    // Fetch fresh from API to ensure we have latest data
+    try {
+      const prompt = await fetch(`/api/prompts/${id}`).then(r => r.json())
+      setSelectedScenario(prompt)
+    } catch {
+      const found = scenarios.find(s => s.id === id)
+      if (found) setSelectedScenario(found)
+    }
   }
 
   if (!authChecked) {
