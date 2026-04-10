@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { LoginScreen } from './components/LoginScreen'
 import { PromptEditor } from './components/PromptEditor'
 import { CallControls } from './components/CallControls'
@@ -7,6 +7,8 @@ import { useDemoMode } from './hooks/useDemoMode'
 import type { PromptSet } from './types'
 
 function App() {
+  const [authChecked, setAuthChecked] = useState(false)
+  const [authRequired, setAuthRequired] = useState(true)
   const [authenticated, setAuthenticated] = useState(() => {
     return !!sessionStorage.getItem('authToken')
   })
@@ -15,6 +17,20 @@ function App() {
   const [systemPrompt, setSystemPrompt] = useState('')
   const [callBrief, setCallBrief] = useState('')
   const { isDemoMode, mockScenarios } = useDemoMode()
+
+  // Check if backend requires auth
+  useEffect(() => {
+    fetch('/auth/status')
+      .then(r => r.json())
+      .then(data => {
+        setAuthRequired(data.auth_required)
+        setAuthChecked(true)
+      })
+      .catch(() => {
+        setAuthRequired(false)
+        setAuthChecked(true)
+      })
+  }, [])
 
   function handlePromptChange(sp: string, cb: string) {
     setSystemPrompt(sp)
@@ -32,7 +48,11 @@ function App() {
     if (found) setSelectedScenario(found)
   }
 
-  if (!authenticated) {
+  if (!authChecked) {
+    return <div className="h-screen flex items-center justify-center bg-gray-950 text-gray-400">Loading...</div>
+  }
+
+  if (authRequired && !authenticated) {
     return <LoginScreen onLogin={() => setAuthenticated(true)} />
   }
 

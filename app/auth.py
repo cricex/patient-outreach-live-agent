@@ -16,7 +16,7 @@ from starlette.responses import JSONResponse
 logger = logging.getLogger("app.auth")
 
 # Paths that never require authentication
-PUBLIC_PATHS = {"/health", "/docs", "/openapi.json", "/auth/validate"}
+PUBLIC_PATHS = {"/health", "/docs", "/openapi.json", "/auth/validate", "/auth/status"}
 # Prefixes that never require authentication
 PUBLIC_PREFIXES = ("/assets/", "/call/events")
 
@@ -76,18 +76,13 @@ def load_passwords() -> None:
                 "Key Vault password load failed (falling back to env): %s", exc
             )
 
-    # Env var: presence means auth is enabled (even if value is empty)
+    # Env var: presence with non-empty value means auth is enabled
     env_val = os.getenv("DEMO_PASSWORDS")
-    if env_val is not None:
+    if env_val is not None and env_val.strip():
         _auth_enabled = True
         passwords = [p.strip() for p in env_val.split(",") if p.strip()]
         _allowed_passwords = set(passwords)
-        if not _allowed_passwords:
-            logger.error(
-                "DEMO_PASSWORDS is set but empty — all requests will be rejected"
-            )
-        else:
-            logger.info("Loaded %d passwords from env", len(_allowed_passwords))
+        logger.info("Loaded %d passwords from env", len(_allowed_passwords))
     else:
         _auth_enabled = False
         logger.info(

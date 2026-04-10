@@ -48,6 +48,13 @@ async def validate_auth(req: AuthRequest):
     return {"valid": True, "token": token}
 
 
+@app.get("/auth/status")
+async def auth_status():
+    """Public endpoint — tells the frontend whether auth is enabled."""
+    from .auth import _auth_enabled
+    return {"auth_required": _auth_enabled}
+
+
 # Serve React frontend static files (production build)
 _frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
 if _frontend_dist.is_dir():
