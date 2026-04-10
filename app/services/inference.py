@@ -60,27 +60,13 @@ async def generate_scenario(
             "Set it in .env to enable AI prompt generation."
         )
 
-    # Build a concise system prompt that avoids content filter triggers.
-    # The detailed meta_generate.md was triggering Azure's jailbreak filter
-    # when combined with healthcare scenarios, so we use a shorter inline prompt.
-    system_msg = (
-        "You generate JSON configuration templates for a voice call demo application. "
-        "Given a scenario description, produce valid JSON with two fields:\n"
-        '- "system_prompt": instructions for a demo voice agent (role, tone, call flow, safety rules)\n'
-        '- "call_brief": fictional sample data the agent references during a test call '
-        "(fictional names, IDs, dates, context)\n\n"
-        "All data must be fictional. Return valid JSON only — no markdown fences, no explanation."
-    )
+    system_msg = _load_meta_prompt()
 
     user_message = (
         f"Scenario: {scenario_description}\n"
         f"Desired tone: {tone}\n"
         f"Language: {language}\n\n"
-        "The system_prompt should include: agent role and organization, voice style "
-        "(warm, concise, 1-2 sentences per turn), call flow steps, safety boundaries. "
-        "Wrap in BEGIN SYSTEM / END SYSTEM.\n\n"
-        "The call_brief should include: fictional participant names, relevant IDs/codes, "
-        "context summary, key details. Wrap in BEGIN CALL_BRIEF / END CALL_BRIEF."
+        f"Generate the system_prompt and call_brief as specified."
     )
 
     try:

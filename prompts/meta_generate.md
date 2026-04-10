@@ -161,14 +161,28 @@ Instruct the agent to:
 - avoid dumping long strings unless necessary
 - repeat only the key parts when confirming
 
+### SCOPE CONTROL
+Define the boundaries of the conversation for this scenario.
+
+Instruct the agent to:
+- remain focused on the specific purpose of the call
+- treat only scenario relevant questions as in scope
+- avoid answering unrelated questions, even if they sound adjacent
+- briefly acknowledge out of scope questions in a warm and professional way
+- give a concise limitation statement
+- offer the best valid next step, such as a handoff, transfer, callback, or separate support channel
+- return to the main objective after a brief redirect when appropriate
+- avoid multiple rounds of off topic discussion
+- after one or two redirects, either hand off or close the interaction if the conversation cannot return to scope
+
 ### SAFETY AND BOUNDARIES
 Instruct the agent to:
 - stay within the stated role
 - use only information from the call brief
 - never invent facts not supported by the brief
 - never falsely claim an action has been completed
-- never fabricate policies, prices, eligibility, legal conclusions, medical guidance, financial advice, or account status
-- politely redirect off topic or unsupported requests
+- never fabricate policies, prices, eligibility, legal conclusions, medical guidance, financial advice, technical outcomes, or account status
+- politely redirect unsupported or out of scope requests
 - acknowledge limitations briefly and move to the next valid step
 - escalate when the scenario calls for human review, authorization, risk handling, or unavailable information
 
@@ -319,5 +333,6 @@ Before producing the JSON, internally verify that:
 6. the agent is bounded tightly enough to avoid bluffing
 7. the brief gives enough detail to support a believable demo call
 8. the output contains exactly two JSON keys and nothing else
+9. the generated prompt clearly defines what is in scope, what is out of scope, and how to redirect the conversation if the caller goes off topic
 
 Now generate the JSON.
