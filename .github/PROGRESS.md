@@ -114,6 +114,7 @@
 ## Log
 
 <!-- Entries prepended newest-first -->
+- **2025-04-10 12:30 UTC** — v1 cleanup: deleted 8 stale files (TASKS.md, CODE_REVIEW.md, COMMENTING.md, prior-auth.env, scripts/*, STARTUP.md, ENV.md), rewrote README.md for v2
 - **01:40 UTC** — UI polish committed: mockup-aligned layout, diagnostics overlay toggle, demo mode for preview without backend
 - **01:25 UTC** — Call history committed (`6be4d81`): transcripts, ACS recording, /api/calls endpoints
 - **01:10 UTC** — Comprehensive copilot-instructions.md rewrite (covers all P1-P3 + AI gen)

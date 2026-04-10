@@ -7,9 +7,8 @@
 4. Rejoin with a final integration pass.
 5. Run relevant build, test, lint, and type checks before finishing when available.
 6. If anything cannot be validated, state the gap and risk clearly.
+7. Always update .github/PROGRESS.md with a timestamped log of what was completed.
 
-## Update files
-Always update .github/PROGRESS.md with a timestamped log of what was completed.
 
 > Realtime voice agent demo platform using Azure Communication Services (ACS) and Azure AI Voice Live. Supports any industry — healthcare patient outreach, prior authorization, insurance, legal, retail, and more. **Not HIPAA-compliant — synthetic data only.**
 
