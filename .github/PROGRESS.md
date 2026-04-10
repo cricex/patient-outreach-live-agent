@@ -114,6 +114,8 @@
 ## Log
 
 <!-- Entries prepended newest-first -->
+- **2026-04-10 13:32 UTC** — Pytest test suite added: 23 tests across 5 files (health, status, prompt CRUD, event bus, simulate call). Added pytest + pytest-asyncio to requirements.txt.
+- **2025-07-24**— Docker configuration added: multi-stage Dockerfile (node:20-alpine → python:3.12-slim), .dockerignore, docker-compose.yml with volume mounts for data/logs
 - **2025-04-10 12:30 UTC** — v1 cleanup: deleted 8 stale files (TASKS.md, CODE_REVIEW.md, COMMENTING.md, prior-auth.env, scripts/*, STARTUP.md, ENV.md), rewrote README.md for v2
 - **01:40 UTC** — UI polish committed: mockup-aligned layout, diagnostics overlay toggle, demo mode for preview without backend
 - **01:25 UTC** — Call history committed (`6be4d81`): transcripts, ACS recording, /api/calls endpoints
