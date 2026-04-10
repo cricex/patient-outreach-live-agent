@@ -114,6 +114,9 @@
 ## Log
 
 <!-- Entries prepended newest-first -->
+- **2025-07-20 UTC** — Added 7 resampling unit tests (`tests/test_resample.py`): downsample/upsample sample counts, roundtrip length, int16 range, empty/tiny input. Full suite 30/30 passing.
+- **2025-07-19 UTC** — Env diagnostics: all config values valid (ACS conn str, phone numbers, APP_BASE_URL HTTPS, VL endpoint/key/model). ACS client creates OK. Voice Live connect+session.update OK. Root cause of 502: `aiohttp` missing from requirements.txt (needed by `azure-ai-voicelive.aio`). Fixed: added `aiohttp>=3.9.0` to requirements.txt. Also installed missing `azure-identity` in local venv.
+- **2026-07-12 UTC** — HTTPS tunnel: reused `swift-hill-t9dzp4x` devtunnel (port 8000/http, anonymous access), public URL `https://n3st3xsb-8000.usw2.devtunnels.ms`, updated `.env.local` with `APP_BASE_URL`, tunnel hosting as background process (PID 30964)
 - **2025-07-18 19:30 UTC** — First Azure deployment: Bicep provisioned (Container Apps Environment, ACR, Key Vault, Log Analytics, managed identity), Docker image pushed to voiceagentdevacr.azurecr.io, Container App live at https://voiceagent-dev-app.ambitiouspond-82878311.eastus2.azurecontainerapps.io — /health and /status verified
 - **2026-04-10 13:45 UTC**— GitHub Actions CI/CD: ci.yml (pytest + frontend lint/build on push/PR), deploy.yml (Docker → ACR → Container Apps on merge to main)
 - **2026-04-10 13:40 UTC** — Bicep infrastructure: infra/main.bicep (Container Apps, ACR, Key Vault, Log Analytics, managed identity, RBAC) + main.bicepparam. Validated with az bicep build.

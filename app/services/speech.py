@@ -12,6 +12,7 @@ natively — no manual flush timers or upsampling needed.
 
 from __future__ import annotations
 
+import array
 import asyncio
 import logging
 import uuid
@@ -26,8 +27,64 @@ from .call_history import call_history
 
 logger = logging.getLogger("app.voice")
 
-# Frame size for output audio (20ms @ 16kHz mono PCM16 = 640 bytes)
-OUTPUT_FRAME_BYTES = settings.media_frame_bytes
+# ACS streams 16kHz PCM16 mono; Voice Live operates at 24kHz.
+# Output frames from VL are buffered at 24kHz then downsampled to 16kHz.
+ACS_FRAME_BYTES = settings.media_frame_bytes   # 640 bytes = 20ms @ 16kHz
+VL_FRAME_BYTES = 960                            # 960 bytes = 20ms @ 24kHz
+
+
+def _downsample_24k_to_16k(pcm_24k: bytes) -> bytes:
+    """Downsample 24kHz PCM16 mono to 16kHz using linear interpolation.
+
+    Ratio 3:2 — every 3 input samples produce 2 output samples.
+    """
+    samples_in = array.array("h")
+    samples_in.frombytes(pcm_24k)
+    n_in = len(samples_in)
+    if n_in < 2:
+        return pcm_24k
+
+    n_out = (n_in * 2 + 2) // 3
+    samples_out = array.array("h", [0] * n_out)
+
+    for i in range(n_out):
+        src = i * 1.5
+        idx = int(src)
+        frac = src - idx
+        if idx + 1 < n_in:
+            val = samples_in[idx] + frac * (samples_in[idx + 1] - samples_in[idx])
+        else:
+            val = samples_in[min(idx, n_in - 1)]
+        samples_out[i] = max(-32768, min(32767, int(val)))
+
+    return samples_out.tobytes()
+
+
+def _upsample_16k_to_24k(pcm_16k: bytes) -> bytes:
+    """Upsample 16kHz PCM16 mono to 24kHz using linear interpolation.
+
+    Ratio 2:3 — every 2 input samples produce 3 output samples.
+    """
+    samples_in = array.array("h")
+    samples_in.frombytes(pcm_16k)
+    n_in = len(samples_in)
+    if n_in < 2:
+        return pcm_16k
+
+    n_out = (n_in * 3 + 1) // 2
+    samples_out = array.array("h", [0] * n_out)
+
+    for i in range(n_out):
+        src = i * (2.0 / 3.0)
+        idx = int(src)
+        frac = src - idx
+        if idx + 1 < n_in:
+            val = samples_in[idx] + frac * (samples_in[idx + 1] - samples_in[idx])
+        else:
+            val = samples_in[min(idx, n_in - 1)]
+        samples_out[i] = max(-32768, min(32767, int(val)))
+
+    return samples_out.tobytes()
 
 # Import SDK — graceful fallback if not installed
 try:
@@ -161,13 +218,16 @@ class SpeechService:
     async def send_audio(self, pcm_bytes: bytes) -> None:
         """Stream raw PCM audio from caller to Voice Live input buffer.
 
+        ACS sends 16kHz; Voice Live expects 24kHz. Upsample before appending.
+
         Args:
-            pcm_bytes: Raw 16-bit PCM audio bytes from the caller.
+            pcm_bytes: Raw 16-bit PCM audio bytes at 16kHz from the caller.
         """
         if not (self._active and self._connection and pcm_bytes):
             return
         try:
-            await self._connection.input_audio_buffer.append(audio=pcm_bytes)
+            upsampled = _upsample_16k_to_24k(pcm_bytes)
+            await self._connection.input_audio_buffer.append(audio=upsampled)
             self._inbound_frame_count += 1
             if self._inbound_frame_count >= 50:
                 event_bus.emit(EventType.AUDIO_INBOUND, frames=self._inbound_frame_count, session_id=self.session_id)
@@ -282,13 +342,15 @@ class SpeechService:
     def _buffer_output_audio(self, audio_bytes: bytes) -> None:
         """Segment output audio into fixed-size frames for ACS.
 
-        Incoming deltas are variable-length; ACS expects uniform 20 ms
-        frames.  This method buffers and slices accordingly.
+        Voice Live sends variable-length 24kHz deltas. Buffer into 20ms
+        frames at 24kHz (960 bytes), downsample to 16kHz (640 bytes),
+        then queue for the media bridge to send to ACS.
         """
         self._output_buffer.extend(audio_bytes)
-        while len(self._output_buffer) >= OUTPUT_FRAME_BYTES:
-            frame = bytes(self._output_buffer[:OUTPUT_FRAME_BYTES])
-            del self._output_buffer[:OUTPUT_FRAME_BYTES]
+        while len(self._output_buffer) >= VL_FRAME_BYTES:
+            frame_24k = bytes(self._output_buffer[:VL_FRAME_BYTES])
+            del self._output_buffer[:VL_FRAME_BYTES]
+            frame_16k = _downsample_24k_to_16k(frame_24k)
             if len(self._output_queue) == self._output_queue.maxlen:
-                self._output_queue.popleft()  # drop oldest if full
-            self._output_queue.append(frame)
+                self._output_queue.popleft()
+            self._output_queue.append(frame_16k)

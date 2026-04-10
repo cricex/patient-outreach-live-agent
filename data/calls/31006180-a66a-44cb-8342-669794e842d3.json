@@ -1,0 +1,22 @@
+{
+  "call_id": "31006180-a66a-44cb-8342-669794e842d3",
+  "scenario_name": "",
+  "system_prompt_preview": "BEGIN SYSTEM\nROLE\n- You’re a realtime phone assistant calling to help the patient schedule preventive care.\n\nCHANNEL & TURN-TAKING\n- Audio only. No links or visuals.\n- Stop instantly when interrupted;",
+  "started_at": "2026-04-10T16:23:31.361964+00:00",
+  "ended_at": "2026-04-10T16:24:05.332876+00:00",
+  "end_reason": "Microsoft.Communication.CallDisconnected",
+  "duration_sec": 34.0,
+  "destination": "+15125385155",
+  "voice": "sage",
+  "model": "gpt-realtime",
+  "simulated": false,
+  "recording_id": null,
+  "transcript": [
+    {
+      "role": "agent",
+      "text": "Hi Charles, I’m calling from the Microsoft Health Clinic. You're due for a colonoscopy, especially given your family history and overdue screening. Does that sound right?",
+      "timestamp": 1775838241.048528
+    }
+  ],
+  "events_count": 0
+}
