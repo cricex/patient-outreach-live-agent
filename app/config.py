@@ -1,42 +1,42 @@
-"""Configuration for /app aligned to Azure Voice Live GA.
+"""Configuration for the v2 patient-outreach voice agent.
 
-Voice Live GA env variables:
-    AZURE_VOICELIVE_ENDPOINT      -> voicelive_endpoint (required)
-    VOICELIVE_MODEL               -> voicelive_model   (required)
-    VOICELIVE_VOICE               -> voicelive_voice   (required)
-    AZURE_VOICELIVE_API_VERSION   -> voicelive_api_version (optional, default here)
-    AZURE_VOICELIVE_API_KEY       -> voicelive_api_key (optional if using Entra ID)
+Env-file layering: .env -> .env.local (last wins).  The load_settings()
+factory reads os.getenv() so any env-file, Azure App Service setting,
+or shell export is honoured identically.
 
-Application base URL:
-    APP_BASE_URL (required for real ACS calls, MUST be https). All callback and media
-    URLs now derive exclusively from APP_BASE_URL (dynamic WEBSITE_HOSTNAME fallback removed).
-
-Legacy speech fields (SPEECH_KEY / SPEECH_REGION) remain optional but GA Voice Live
-uses the dedicated endpoint + key or Entra token.
+Voice Live GA 1.1.0 adds server-side noise reduction, echo cancellation,
+and configurable Server VAD — all exposed here.  Legacy Speech SDK fields
+and manual input-flush tuning are removed; the GA SDK handles both.
 """
 
 from __future__ import annotations
 
+import logging
 import os
 
 from dotenv import load_dotenv
 from pydantic import BaseModel, field_validator
 
-
 load_dotenv()
 load_dotenv(dotenv_path=".env.local", override=True)
 
+logger = logging.getLogger("app.config")
+
 
 class Settings(BaseModel):
-    """Strongly typed configuration for the FastAPI voice call service."""
+    """Strongly-typed configuration populated from environment variables.
 
-    # Core service / ACS
+    Use ``load_settings()`` to construct; do not instantiate directly.
+    Fields map 1-to-1 with env vars documented in ``ENV.md``.
+    """
+
+    # ── Core service / ACS ──────────────────────────────────────────────
     app_base_url: str
     acs_connection_string: str
     acs_outbound_caller_id: str
     target_phone_number: str | None = None
 
-    # Voice Live GA (endpoint + model + voice + instructions)
+    # ── Voice Live GA ───────────────────────────────────────────────────
     voicelive_endpoint: str | None = None
     voicelive_model: str | None = None
     voicelive_voice: str | None = None
@@ -44,32 +44,42 @@ class Settings(BaseModel):
     voicelive_api_version: str = "2025-10-01"
     voicelive_api_key: str | None = None
     default_system_prompt: str = "You are a helpful voice agent. Keep responses concise."
-    voicelive_start_immediate: bool = False
     voicelive_language_hint: str | None = None
     voicelive_wait_for_caller: bool = True
 
-    # Legacy / optional speech key-region (fallback)
-    speech_key: str | None = None
-    speech_region: str | None = None
+    # Voice Live GA 1.1.0 audio-processing features
+    voicelive_noise_reduction: bool = True
+    voicelive_echo_cancellation: bool = True
 
-    # Call lifecycle
+    # Server VAD tuning — the SDK's ServerVad replaces manual flush gating
+    voicelive_vad_threshold: float = 0.5
+    voicelive_vad_prefix_padding_ms: int = 300
+    voicelive_vad_silence_duration_ms: int = 500
+
+    # ── Foundry inference (prompt generation via chat completions) ─────
+    foundry_inference_endpoint: str | None = None
+    foundry_inference_model: str = "gpt-4o"
+    foundry_inference_api_key: str | None = None
+
+    # ── Call lifecycle ──────────────────────────────────────────────────
     call_timeout_sec: int = 90
     call_idle_timeout_sec: int = 90
+    enable_call_recording: bool = False
 
-    # Media bridge basics
+    # ── Media bridge ────────────────────────────────────────────────────
     media_bidirectional: bool = True
     media_start_at_create: bool = True
     media_audio_channel_type: str = "mixed"
     media_frame_bytes: int = 640
     media_frame_interval_ms: int = 20
-    media_out_format: str = "json_simple"
     media_enable_voicelive_in: bool = True
     media_enable_voicelive_out: bool = True
-    voicelive_upsample_16k_to_24k: bool = True
-    voicelive_input_flush_target_frames: int = 4
-    voicelive_input_flush_interval_ms: int = 60
-    voicelive_input_flush_max_interval_ms: int = 180
-    debug_voicelive_input_flush: bool = False
+
+    # ── Application ─────────────────────────────────────────────────────
+    log_level: str = "INFO"
+    websites_port: int = 8000
+
+    # ── Validators ──────────────────────────────────────────────────────
 
     @field_validator("app_base_url", "acs_connection_string", "acs_outbound_caller_id")
     @classmethod
@@ -79,6 +89,12 @@ class Settings(BaseModel):
         return value
 
     def validate_voicelive(self) -> None:
+        """Check Voice Live fields for consistency after construction.
+
+        Raises:
+            ValueError: If required Voice Live fields are missing or
+                VAD / media values are out of range.
+        """
         missing: list[str] = []
         if not self.voicelive_endpoint:
             missing.append("AZURE_VOICELIVE_ENDPOINT")
@@ -88,29 +104,41 @@ class Settings(BaseModel):
             missing.append("VOICELIVE_VOICE")
         if missing:
             raise ValueError("Voice Live GA config missing: " + ", ".join(missing))
+
         if self.media_audio_channel_type not in {"mixed", "unmixed"}:
             raise ValueError("MEDIA_AUDIO_CHANNEL_TYPE must be 'mixed' or 'unmixed'")
-        if self.media_out_format not in {"json_simple", "binary"}:
-            raise ValueError("MEDIA_OUT_FORMAT must be 'json_simple' or 'binary'")
-        if self.voicelive_input_flush_target_frames <= 0:
-            raise ValueError("VOICELIVE_INPUT_FLUSH_FRAMES must be > 0")
-        if self.voicelive_input_flush_interval_ms <= 0:
-            raise ValueError("VOICELIVE_INPUT_FLUSH_INTERVAL_MS must be > 0")
-        if self.voicelive_input_flush_max_interval_ms < self.voicelive_input_flush_interval_ms:
-            raise ValueError("VOICELIVE_INPUT_FLUSH_MAX_INTERVAL_MS must be >= interval")
+
+        # VAD threshold is a probability; must be in [0.0, 1.0]
+        if not 0.0 <= self.voicelive_vad_threshold <= 1.0:
+            raise ValueError("VOICELIVE_VAD_THRESHOLD must be between 0.0 and 1.0")
+        if self.voicelive_vad_prefix_padding_ms <= 0:
+            raise ValueError("VOICELIVE_VAD_PREFIX_PADDING_MS must be > 0")
+        if self.voicelive_vad_silence_duration_ms <= 0:
+            raise ValueError("VOICELIVE_VAD_SILENCE_DURATION_MS must be > 0")
+
+
+def _env_bool(name: str, default: str = "false") -> bool:
+    """Read an env var as a boolean (case-insensitive 'true')."""
+    return os.getenv(name, default).lower() == "true"
+
 
 def load_settings() -> Settings:
+    """Build a ``Settings`` instance from the current environment.
+
+    ACS_CONNECTION_STRING gets extra quote-stripping because Azure portal
+    sometimes wraps the value in quotes when copied.
+    """
     raw_conn = os.getenv("ACS_CONNECTION_STRING", "")
     if raw_conn.startswith(("'", '"')) and raw_conn.endswith(("'", '"')):
-        raw_conn_clean = raw_conn[1:-1]
-    else:
-        raw_conn_clean = raw_conn
+        raw_conn = raw_conn[1:-1]
 
-    settings = Settings(
+    s = Settings(
+        # Core / ACS
         app_base_url=os.getenv("APP_BASE_URL", "http://localhost:8000"),
-        acs_connection_string=raw_conn_clean.strip(),
+        acs_connection_string=raw_conn.strip(),
         acs_outbound_caller_id=os.getenv("ACS_OUTBOUND_CALLER_ID", ""),
         target_phone_number=os.getenv("TARGET_PHONE_NUMBER"),
+        # Voice Live GA
         voicelive_endpoint=os.getenv("AZURE_VOICELIVE_ENDPOINT"),
         voicelive_model=os.getenv("VOICELIVE_MODEL"),
         voicelive_voice=os.getenv("VOICELIVE_VOICE"),
@@ -121,32 +149,40 @@ def load_settings() -> Settings:
             "DEFAULT_SYSTEM_PROMPT",
             "You are a helpful voice agent. Keep responses concise.",
         ),
-        voicelive_start_immediate=os.getenv("VOICELIVE_START_IMMEDIATE", "false").lower() == "true",
         voicelive_language_hint=os.getenv("VOICELIVE_LANGUAGE_HINT"),
-        voicelive_wait_for_caller=os.getenv("VOICELIVE_WAIT_FOR_CALLER", "true").lower() == "true",
-        speech_key=os.getenv("SPEECH_KEY"),
-        speech_region=os.getenv("SPEECH_REGION"),
+        voicelive_wait_for_caller=_env_bool("VOICELIVE_WAIT_FOR_CALLER", "true"),
+        # GA 1.1.0 audio processing
+        voicelive_noise_reduction=_env_bool("VOICELIVE_NOISE_REDUCTION", "true"),
+        voicelive_echo_cancellation=_env_bool("VOICELIVE_ECHO_CANCELLATION", "true"),
+        # Server VAD
+        voicelive_vad_threshold=float(os.getenv("VOICELIVE_VAD_THRESHOLD", "0.5")),
+        voicelive_vad_prefix_padding_ms=int(os.getenv("VOICELIVE_VAD_PREFIX_PADDING_MS", "300")),
+        voicelive_vad_silence_duration_ms=int(os.getenv("VOICELIVE_VAD_SILENCE_DURATION_MS", "500")),
+        # Foundry inference
+        foundry_inference_endpoint=os.getenv("FOUNDRY_INFERENCE_ENDPOINT"),
+        foundry_inference_model=os.getenv("FOUNDRY_INFERENCE_MODEL", "gpt-4o"),
+        foundry_inference_api_key=os.getenv("FOUNDRY_INFERENCE_API_KEY"),
+        # Call lifecycle
         call_timeout_sec=int(os.getenv("CALL_TIMEOUT_SEC", "90")),
         call_idle_timeout_sec=int(
             os.getenv("CALL_IDLE_TIMEOUT_SEC", os.getenv("CALL_TIMEOUT_SEC", "90"))
         ),
-        media_bidirectional=os.getenv("MEDIA_BIDIRECTIONAL", "true").lower() == "true",
-        media_start_at_create=os.getenv("MEDIA_START_AT_CREATE", "true").lower() == "true",
+        enable_call_recording=_env_bool("ENABLE_CALL_RECORDING", "false"),
+        # Media bridge
+        media_bidirectional=_env_bool("MEDIA_BIDIRECTIONAL", "true"),
+        media_start_at_create=_env_bool("MEDIA_START_AT_CREATE", "true"),
         media_audio_channel_type=os.getenv("MEDIA_AUDIO_CHANNEL_TYPE", "mixed").lower(),
         media_frame_bytes=int(os.getenv("MEDIA_FRAME_BYTES", "640")),
         media_frame_interval_ms=int(os.getenv("MEDIA_FRAME_INTERVAL_MS", "20")),
-        media_out_format=os.getenv("MEDIA_OUT_FORMAT", "json_simple").lower(),
-        media_enable_voicelive_in=os.getenv("MEDIA_ENABLE_VL_IN", "true").lower() == "true",
-        media_enable_voicelive_out=os.getenv("MEDIA_ENABLE_VL_OUT", "true").lower() == "true",
-        voicelive_upsample_16k_to_24k=
-            os.getenv("VOICELIVE_UPSAMPLE_16K_TO_24K", "true").lower() == "true",
-        voicelive_input_flush_target_frames=int(os.getenv("VOICELIVE_INPUT_FLUSH_FRAMES", "4")),
-        voicelive_input_flush_interval_ms=int(os.getenv("VOICELIVE_INPUT_FLUSH_INTERVAL_MS", "60")),
-        voicelive_input_flush_max_interval_ms=int(os.getenv("VOICELIVE_INPUT_FLUSH_MAX_INTERVAL_MS", "180")),
-        debug_voicelive_input_flush=os.getenv("DEBUG_VOICELIVE_INPUT_FLUSH", "false").lower() == "true",
+        media_enable_voicelive_in=_env_bool("MEDIA_ENABLE_VL_IN", "true"),
+        media_enable_voicelive_out=_env_bool("MEDIA_ENABLE_VL_OUT", "true"),
+        # Application
+        log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
+        websites_port=int(os.getenv("WEBSITES_PORT", "8000")),
     )
-    settings.validate_voicelive()
-    return settings
+    s.validate_voicelive()
+    logger.info("settings loaded  vl_endpoint=%s  model=%s", s.voicelive_endpoint, s.voicelive_model)
+    return s
 
 
 settings = load_settings()
