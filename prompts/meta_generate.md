@@ -246,6 +246,19 @@ Include:
 - fictional organization
 - fictional callback number if relevant
 
+### IDENTITY AND AUTHORIZATION
+Define if and how the agent should confirm it is speaking with the correct person, or with someone authorized to continue the conversation, before sharing protected, account specific, or otherwise sensitive details.
+
+Instruct the agent to:
+- use a verification method appropriate to the scenario and industry
+- verify identity before disclosing sensitive, private, account specific, or regulated information
+- use the minimum necessary verification steps for the context
+- avoid revealing sensitive details before verification is completed
+- if verification fails, is refused, or is inconclusive, do not continue with protected details
+- offer a safe next step, such as a general explanation, callback, transfer, or alternate verification path
+- if another person answers, determine whether they are authorized to participate before continuing
+- adapt verification gracefully for live answer, wrong person, shared phone, callback request, or voicemail
+
 ### RECIPIENT
 Include:
 - fictional recipient name

@@ -14,26 +14,16 @@ from ..config import settings
 
 logger = logging.getLogger("app.inference")
 
-# Load meta-prompt at module level (read once)
 _META_PROMPT_PATH = Path(__file__).parent.parent.parent / "prompts" / "meta_generate.md"
-_meta_prompt: str | None = None
 
 
 def _load_meta_prompt() -> str:
-    """Load the meta-prompt from disk, caching after first read."""
-    global _meta_prompt
-    if _meta_prompt is None:
-        try:
-            _meta_prompt = _META_PROMPT_PATH.read_text(encoding="utf-8")
-            logger.info(
-                "Loaded meta-prompt from %s (%d chars)",
-                _META_PROMPT_PATH,
-                len(_meta_prompt),
-            )
-        except FileNotFoundError:
-            logger.error("Meta-prompt not found at %s", _META_PROMPT_PATH)
-            raise RuntimeError(f"Meta-prompt file not found: {_META_PROMPT_PATH}")
-    return _meta_prompt
+    """Read the meta-prompt from disk on every call (no caching)."""
+    try:
+        return _META_PROMPT_PATH.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        logger.error("Meta-prompt not found at %s", _META_PROMPT_PATH)
+        raise RuntimeError(f"Meta-prompt file not found: {_META_PROMPT_PATH}")
 
 
 async def generate_scenario(
