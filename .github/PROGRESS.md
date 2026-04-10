@@ -114,9 +114,11 @@
 ## Log
 
 <!-- Entries prepended newest-first -->
-- **2026-04-10 13:32 UTC** — Pytest test suite added: 23 tests across 5 files (health, status, prompt CRUD, event bus, simulate call). Added pytest + pytest-asyncio to requirements.txt.
-- **2025-07-24**— Docker configuration added: multi-stage Dockerfile (node:20-alpine → python:3.12-slim), .dockerignore, docker-compose.yml with volume mounts for data/logs
-- **2025-04-10 12:30 UTC** — v1 cleanup: deleted 8 stale files (TASKS.md, CODE_REVIEW.md, COMMENTING.md, prior-auth.env, scripts/*, STARTUP.md, ENV.md), rewrote README.md for v2
+- **2026-04-10 13:45 UTC** — GitHub Actions CI/CD: ci.yml (pytest + frontend lint/build on push/PR), deploy.yml (Docker → ACR → Container Apps on merge to main)
+- **2026-04-10 13:40 UTC** — Bicep infrastructure: infra/main.bicep (Container Apps, ACR, Key Vault, Log Analytics, managed identity, RBAC) + main.bicepparam. Validated with az bicep build.
+- **2026-04-10 13:35 UTC** — Docker: multi-stage Dockerfile (node:20-alpine → python:3.12-slim), .dockerignore, docker-compose.yml
+- **2026-04-10 13:32 UTC** — Pytest test suite: 23 tests across 5 files (health, prompt CRUD, event bus, simulate call). Added pytest + pytest-asyncio.
+- **2026-04-10 12:30 UTC** — v1 cleanup: deleted 8 stale files, rewrote README.md for v2
 - **01:40 UTC** — UI polish committed: mockup-aligned layout, diagnostics overlay toggle, demo mode for preview without backend
 - **01:25 UTC** — Call history committed (`6be4d81`): transcripts, ACS recording, /api/calls endpoints
 - **01:10 UTC** — Comprehensive copilot-instructions.md rewrite (covers all P1-P3 + AI gen)
@@ -130,3 +132,5 @@
 - **23:37 UTC** — ✅ `p1-deps` done — requirements.txt pinned (voicelive==1.1.0, added azure-identity)
 - **23:36 UTC** — Wave 1 dispatched (p1-structure, p1-config, p1-deps)
 - **23:35 UTC** — Phase 1 started, progress log created
+
+- **2026-04-10 13:34 UTC** — ✅ CI/CD workflows created: `ci.yml` (test + lint on push/PR) and `deploy.yml` (Docker build + Container Apps deploy on main)
