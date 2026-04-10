@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { api } from '../api/client'
 import type { PromptSet } from '../types'
 
@@ -18,26 +18,23 @@ export function PromptEditor({ onPromptChange, selectedScenario, onScenarioChang
   const [generateInput, setGenerateInput] = useState('')
   const [generateError, setGenerateError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
-  const generatedRef = useRef(false)
 
-  useEffect(() => {
-    loadScenarios()
-  }, [])
-
+  // Sync fields when user selects a saved scenario from dropdown
   useEffect(() => {
     if (selectedScenario) {
       setSystemPrompt(selectedScenario.system_prompt)
       setCallBrief(selectedScenario.call_brief)
       setScenarioName(selectedScenario.name)
-    } else if (generatedRef.current) {
-      // Don't clear fields — we just generated new content
-      generatedRef.current = false
     } else {
       setSystemPrompt('')
       setCallBrief('')
       setScenarioName('')
     }
   }, [selectedScenario])
+
+  useEffect(() => {
+    loadScenarios()
+  }, [])
 
   useEffect(() => {
     onPromptChange(systemPrompt, callBrief)
@@ -72,11 +69,6 @@ export function PromptEditor({ onPromptChange, selectedScenario, onScenarioChang
       if (result.scenario_title) {
         setScenarioName(result.scenario_title)
       }
-      // Clear selected scenario so header doesn't show stale name
-      // But prevent the useEffect from wiping our just-generated content
-      // by setting a flag
-      generatedRef.current = true
-      onScenarioChange(null)
     } catch (err: any) {
       const msg = err?.message || 'Generation failed'
       setGenerateError(msg)
