@@ -56,6 +56,7 @@ class DiagnosticEvent:
     type: EventType
     timestamp: float = field(default_factory=time.time)
     data: dict[str, Any] = field(default_factory=dict)
+    session_id: str = "default"
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to a plain dict suitable for JSON encoding."""
@@ -63,6 +64,7 @@ class DiagnosticEvent:
             "type": self.type.value,
             "timestamp": self.timestamp,
             "data": self.data,
+            "session_id": self.session_id,
         }
 
 
@@ -75,28 +77,24 @@ class EventBus:
     """
 
     def __init__(self, max_queue_size: int = 200) -> None:
-        self._subscribers: dict[int, asyncio.Queue[DiagnosticEvent]] = {}
+        self._subscribers: dict[int, tuple[asyncio.Queue[DiagnosticEvent], str | None]] = {}
         self._next_id: int = 0
         self._max_queue_size = max_queue_size
         # Keep recent events for new subscribers joining mid-call
         self._recent: list[DiagnosticEvent] = []
         self._recent_max = 50
 
-    def subscribe(self) -> tuple[int, asyncio.Queue[DiagnosticEvent]]:
-        """Register a new subscriber.
-
-        Returns:
-            A (subscriber_id, queue) tuple. The caller reads from the
-            queue and must call ``unsubscribe`` when done.
-        """
+    def subscribe(self, session_id: str | None = None) -> tuple[int, asyncio.Queue[DiagnosticEvent]]:
+        """Register a new subscriber, optionally filtering by session_id."""
         sub_id = self._next_id
         self._next_id += 1
         queue: asyncio.Queue[DiagnosticEvent] = asyncio.Queue(
             maxsize=self._max_queue_size,
         )
-        self._subscribers[sub_id] = queue
+        self._subscribers[sub_id] = (queue, session_id)
         logger.debug(
-            "Subscriber %d registered (total=%d)", sub_id, len(self._subscribers),
+            "Subscriber %d registered session=%s (total=%d)",
+            sub_id, session_id, len(self._subscribers),
         )
         return sub_id, queue
 
@@ -112,6 +110,7 @@ class EventBus:
 
         Slow consumers that have a full queue get their oldest event
         dropped so the bus never blocks the publisher.
+        Subscribers with a session_id filter only receive matching events.
         """
         self._recent.append(event)
         if len(self._recent) > self._recent_max:
@@ -119,7 +118,10 @@ class EventBus:
             self._recent = self._recent[-self._recent_max :]
 
         dead: list[int] = []
-        for sub_id, queue in self._subscribers.items():
+        for sub_id, (queue, filter_sid) in self._subscribers.items():
+            # If subscriber has a session filter, only deliver matching events
+            if filter_sid is not None and event.session_id != filter_sid:
+                continue
             try:
                 queue.put_nowait(event)
             except asyncio.QueueFull:
@@ -133,13 +135,13 @@ class EventBus:
         for sub_id in dead:
             self._subscribers.pop(sub_id, None)
 
-    def emit(self, event_type: EventType, **data: Any) -> None:
+    def emit(self, event_type: EventType, session_id: str = "default", **data: Any) -> None:
         """Fire-and-forget helper for sync call-sites inside the loop.
 
         Creates an ``asyncio.Task`` internally. In pure-async code prefer
         ``await publish()`` directly so back-pressure is visible.
         """
-        event = DiagnosticEvent(type=event_type, data=data)
+        event = DiagnosticEvent(type=event_type, data=data, session_id=session_id)
         try:
             loop = asyncio.get_running_loop()
             loop.create_task(self.publish(event))
@@ -147,13 +149,18 @@ class EventBus:
             # No event loop running — skip (happens during import/tests)
             pass
 
-    def get_recent(self) -> list[dict[str, Any]]:
-        """Return recent events for new subscribers joining mid-call."""
+    def get_recent(self, session_id: str | None = None) -> list[dict[str, Any]]:
+        """Return recent events, optionally filtered by session_id."""
+        if session_id is not None:
+            return [e.to_dict() for e in self._recent if e.session_id == session_id]
         return [e.to_dict() for e in self._recent]
 
-    def clear(self) -> None:
-        """Clear recent event buffer (call this on call end)."""
-        self._recent.clear()
+    def clear(self, session_id: str | None = None) -> None:
+        """Clear recent event buffer, optionally for a specific session only."""
+        if session_id is not None:
+            self._recent = [e for e in self._recent if e.session_id != session_id]
+        else:
+            self._recent.clear()
 
 
 # Module-level singleton

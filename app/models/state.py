@@ -123,62 +123,159 @@ class MediaMetrics:
 
 
 class AppState:
-    """Global application state — singleton, async-safe.
+    """Global application state — singleton, async-safe, per-session scoped.
 
-    Replaces v1's RLock-based state with plain attribute access.
-    Since FastAPI runs on a single event loop, concurrent coroutines
-    don't preempt each other mid-statement, so simple attribute
-    assignment is safe. An asyncio.Lock is used only around multi-step
-    mutations that yield (await) between reads and writes.
+    State is keyed by session_id so each authenticated token sees only its
+    own call.  Backward-compatible properties delegate to DEFAULT_SESSION_ID
+    for tests and code that hasn't been migrated yet.
     """
 
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
         self.started_at: float = time.time()
-        self.current_call: CallState | None = None
-        self.last_call: CallState | None = None
-        self.last_event_at: float | None = None
-        self.voicelive: VoiceLiveState | None = None
-        self.media: MediaMetrics = MediaMetrics()
+        self._calls: dict[str, CallState] = {}
+        self._last_calls: dict[str, CallState] = {}
+        self._last_events: dict[str, float] = {}
+        self._voicelive: dict[str, VoiceLiveState] = {}
+        self._media: dict[str, MediaMetrics] = {}
 
-    async def begin_call(self, call_id: str, prompt: str) -> None:
-        async with self._lock:
-            self.current_call = CallState(call_id=call_id, prompt=prompt)
-            self.last_event_at = time.time()
-            self.media.reset()
+    # ------------------------------------------------------------------
+    # Per-session accessors
+    # ------------------------------------------------------------------
 
-    async def end_call(self, call_id: str, reason: str | None = None) -> None:
-        async with self._lock:
-            if self.current_call and self.current_call.call_id == call_id:
-                self.current_call.ended_at = time.time()
-                self.current_call.end_reason = reason
-                self.last_call = self.current_call
-                self.current_call = None
+    def get_media(self, session_id: str) -> MediaMetrics:
+        """Get or create MediaMetrics for a session."""
+        if session_id not in self._media:
+            self._media[session_id] = MediaMetrics()
+        return self._media[session_id]
 
-    def update_last_event(self) -> None:
+    def get_call(self, session_id: str) -> CallState | None:
+        """Get current call for a session."""
+        return self._calls.get(session_id)
+
+    def get_last_event(self, session_id: str) -> float | None:
+        return self._last_events.get(session_id)
+
+    def update_last_event(self, session_id: str | None = None) -> None:
         """Non-async — single assignment is atomic in CPython."""
-        self.last_event_at = time.time()
+        if session_id is None:
+            from ..auth import DEFAULT_SESSION_ID
+            session_id = DEFAULT_SESSION_ID
+        self._last_events[session_id] = time.time()
 
-    async def begin_voicelive(self, session_id: str, voice: str, model: str | None) -> None:
-        self.voicelive = VoiceLiveState(session_id=session_id, voice=voice, model=model)
+    # ------------------------------------------------------------------
+    # Call lifecycle
+    # ------------------------------------------------------------------
 
-    async def end_voicelive(self, reason: str | None = None) -> None:
-        if self.voicelive and self.voicelive.active:
-            self.voicelive.ended_at = time.time()
-            self.voicelive.end_reason = reason
-            self.voicelive.active = False
+    async def begin_call(self, session_id: str, call_id: str | None = None, prompt: str | None = None) -> None:
+        # Support old signature: begin_call(call_id, prompt)
+        if call_id is not None and prompt is not None:
+            pass  # new-style call
+        else:
+            # Old-style: begin_call(call_id, prompt) — session_id is actually call_id
+            from ..auth import DEFAULT_SESSION_ID
+            prompt = call_id  # type: ignore[assignment]
+            call_id = session_id
+            session_id = DEFAULT_SESSION_ID
+        async with self._lock:
+            self._calls[session_id] = CallState(call_id=call_id, prompt=prompt)  # type: ignore[arg-type]
+            self._last_events[session_id] = time.time()
+            self._media[session_id] = MediaMetrics()
 
-    def snapshot(self) -> dict[str, Any]:
-        """Return a serializable snapshot for the /status endpoint."""
+    async def end_call(self, session_id: str, call_id: str | None = None, reason: str | None = None) -> None:
+        # Support old signature: end_call(call_id, reason=...)
+        if call_id is None:
+            from ..auth import DEFAULT_SESSION_ID
+            call_id = session_id
+            reason = reason  # noqa: PLW0127
+            session_id = DEFAULT_SESSION_ID
+        async with self._lock:
+            call = self._calls.get(session_id)
+            if call and call.call_id == call_id:
+                call.ended_at = time.time()
+                call.end_reason = reason
+                self._last_calls[session_id] = call
+                del self._calls[session_id]
+
+    # ------------------------------------------------------------------
+    # Voice Live lifecycle
+    # ------------------------------------------------------------------
+
+    async def begin_voicelive(self, session_id: str, vl_session_id: str | None = None, voice: str | None = None, model: str | None = None) -> None:
+        # Support old signature: begin_voicelive(vl_session_id, voice, model)
+        if vl_session_id is not None and voice is not None:
+            pass  # new-style call
+        else:
+            from ..auth import DEFAULT_SESSION_ID
+            # Old-style: session_id is actually vl_session_id, vl_session_id is voice, voice is model
+            model = voice
+            voice = vl_session_id  # type: ignore[assignment]
+            vl_session_id = session_id
+            session_id = DEFAULT_SESSION_ID
+        self._voicelive[session_id] = VoiceLiveState(session_id=vl_session_id, voice=voice, model=model)  # type: ignore[arg-type]
+
+    async def end_voicelive(self, session_id: str | None = None, reason: str | None = None) -> None:
+        if session_id is None:
+            from ..auth import DEFAULT_SESSION_ID
+            session_id = DEFAULT_SESSION_ID
+        vl = self._voicelive.get(session_id)
+        if vl and vl.active:
+            vl.ended_at = time.time()
+            vl.end_reason = reason
+            vl.active = False
+
+    # ------------------------------------------------------------------
+    # Snapshot
+    # ------------------------------------------------------------------
+
+    def snapshot(self, session_id: str | None = None) -> dict[str, Any]:
+        """Return a serializable snapshot for a specific session."""
+        if session_id is None:
+            from ..auth import DEFAULT_SESSION_ID
+            session_id = DEFAULT_SESSION_ID
+        call = self._calls.get(session_id)
+        last = self._last_calls.get(session_id)
+        vl = self._voicelive.get(session_id)
+        media = self._media.get(session_id, MediaMetrics())
         return {
             "uptime_sec": round(time.time() - self.started_at, 3),
             "call": {
-                "current": self.current_call.to_dict() if self.current_call else None,
-                "last": self.last_call.to_dict() if self.last_call else None,
+                "current": call.to_dict() if call else None,
+                "last": last.to_dict() if last else None,
             },
-            "voicelive": self.voicelive.to_dict() if self.voicelive else {"active": False},
-            "media": self.media.to_dict(),
+            "voicelive": vl.to_dict() if vl else {"active": False},
+            "media": media.to_dict(),
         }
+
+    # ------------------------------------------------------------------
+    # Backward-compat properties for code not yet session-aware
+    # ------------------------------------------------------------------
+
+    @property
+    def current_call(self) -> CallState | None:
+        """Default session call — used by tests and un-migrated code."""
+        from ..auth import DEFAULT_SESSION_ID
+        return self._calls.get(DEFAULT_SESSION_ID)
+
+    @property
+    def last_call(self) -> CallState | None:
+        from ..auth import DEFAULT_SESSION_ID
+        return self._last_calls.get(DEFAULT_SESSION_ID)
+
+    @property
+    def last_event_at(self) -> float | None:
+        from ..auth import DEFAULT_SESSION_ID
+        return self._last_events.get(DEFAULT_SESSION_ID)
+
+    @property
+    def voicelive(self) -> VoiceLiveState | None:
+        from ..auth import DEFAULT_SESSION_ID
+        return self._voicelive.get(DEFAULT_SESSION_ID)
+
+    @property
+    def media(self) -> MediaMetrics:
+        from ..auth import DEFAULT_SESSION_ID
+        return self.get_media(DEFAULT_SESSION_ID)
 
 
 app_state = AppState()

@@ -25,8 +25,9 @@ class CallSession:
     Owns the SpeechService and timeout watcher for this call.
     """
 
-    def __init__(self, call_id: str, app_state: AppState) -> None:
+    def __init__(self, call_id: str, app_state: AppState, session_id: str) -> None:
         self.call_id = call_id
+        self.session_id = session_id
         self._app_state = app_state
         self.speech: SpeechService = SpeechService()
         self._timeout_task: asyncio.Task | None = None
@@ -41,17 +42,19 @@ class CallSession:
         await self.speech.connect(system_prompt)
         # Record Voice Live session in app state
         await self._app_state.begin_voicelive(
+            self.session_id,
             self.speech.session_id,
             self.speech.voice or "unknown",
             self.speech.model,
         )
-        event_bus.emit(EventType.VL_SESSION_STARTED, call_id=self.call_id, session_id=self.speech.session_id)
+        event_bus.emit(EventType.VL_SESSION_STARTED, session_id=self.session_id, call_id=self.call_id, vl_session_id=self.speech.session_id)
         # Start timeout watcher
         self._timeout_task = asyncio.create_task(self._watch_timeouts())
         logger.info(
-            "CallSession started call_id=%s speech_id=%s",
+            "CallSession started call_id=%s speech_id=%s session_id=%s",
             self.call_id,
             self.speech.session_id,
+            self.session_id,
         )
 
     async def stop(self, reason: str | None = None) -> None:
@@ -67,9 +70,9 @@ class CallSession:
         if self.speech.active:
             await self.speech.close()
 
-        event_bus.emit(EventType.VL_SESSION_ENDED, call_id=self.call_id, reason=reason)
-        await self._app_state.end_voicelive(reason)
-        await self._app_state.end_call(self.call_id, reason)
+        event_bus.emit(EventType.VL_SESSION_ENDED, session_id=self.session_id, call_id=self.call_id, reason=reason)
+        await self._app_state.end_voicelive(self.session_id, reason)
+        await self._app_state.end_call(self.session_id, self.call_id, reason)
         logger.info(
             "CallSession stopped call_id=%s reason=%s", self.call_id, reason
         )
@@ -88,7 +91,7 @@ class CallSession:
             while True:
                 await asyncio.sleep(5)
 
-                call = self._app_state.current_call
+                call = self._app_state.get_call(self.session_id)
                 if not call:
                     break
 
@@ -106,7 +109,7 @@ class CallSession:
                     break
 
                 # Idle timeout
-                last_event = self._app_state.last_event_at
+                last_event = self._app_state.get_last_event(self.session_id)
                 if last_event and (time.time() - last_event) > settings.call_idle_timeout_sec:
                     logger.info("Call idle timeout call_id=%s", self.call_id)
                     if self._hangup_callback and not self._hangup_callback.done():

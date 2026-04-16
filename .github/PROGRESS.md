@@ -8,6 +8,13 @@
 |------|--------|-------|
 | Replace Azure OpenAI with Foundry AIServices | ✅ | Deleted `voiceagent-dev-openai` (kind: OpenAI), created `voiceagent-dev-foundry` (kind: AIServices) in eastus2. Deployed `gpt-4.1-mini` (GlobalStandard). Endpoint: `https://voiceagent-dev-foundry.services.ai.azure.com/models`. Removed incorrect `api_version` from `ChatCompletionsClient` in `inference.py`. Updated `.env` + Container App env vars. All 30 tests pass. — 2026-04-10 |
 
+## Multi-Session Support
+
+| Task | Status | Notes |
+|------|--------|-------|
+| Add session_id scoping to EventBus | ✅ | `DiagnosticEvent` gains `session_id` field (default `"default"`). `subscribe()` accepts optional `session_id` filter. `publish()` skips non-matching subscribers. `emit()` accepts `session_id` param. `get_recent()`/`clear()` support per-session filtering. Backward-compatible — callers without session_id see all events. All 27 passing tests still pass. `event_bus.py` — 2025-07-24 |
+| Refactor AppState per-session scoping | ✅ | Replaced single-slot `current_call`/`voicelive`/`media` with per-session dicts keyed by `session_id`. All methods accept `session_id` with backward-compatible fallback to `DEFAULT_SESSION_ID`. Backward-compat properties (`current_call`, `last_call`, `voicelive`, `media`, `last_event_at`) preserved for tests and un-migrated code. All 30 tests pass. `app/models/state.py` — 2026-04-16 |
+
 ## UX Fixes
 
 | Task | Status | Notes |
@@ -127,6 +134,8 @@
 ## Log
 
 <!-- Entries prepended newest-first -->
+- **2026-04-16 14:30 UTC** — Three production fixes: (1) Call timeout defaults changed from 90s→600s hard / 120s idle. (2) Audio quality: eliminated all resampling by switching ACS to Pcm24KMono (matching Voice Live's native 24kHz), clock-aligned outbound timing to prevent drift, frame drop logging. (3) Session isolation: per-token session_ids, per-session AppState/CallManager/EventBus scoping, concurrent calls supported, media WS routing by session. 15 files changed, 8 new tests (38 total). All pass.
+- **2025-07-26 UTC** — Audio quality fix: eliminated resampling by matching ACS and Voice Live at 24kHz (Pcm24KMono, 960-byte frames). Removed `_upsample_16k_to_24k` and `_downsample_24k_to_16k`. Wall-clock-aligned outbound timing in media_bridge to prevent drift. Frame drop logging added. Tests updated (30/30 passing). Files: config.py, speech.py, media_bridge.py, call_manager.py, test_resample.py.
 - **2026-04-10 21:50 UTC** — Critical fix: call_brief was never sent to Voice Live. calls.py now combines system_prompt + call_brief before passing to call_manager. Agent now correctly uses scenario context (patient names, roles, etc.)
 - **2026-04-10 21:20 UTC** — Enabled caller audio transcription (AudioInputTranscriptionOptions model=whisper-1). Both sides of conversation now captured in call history.
 - **2026-04-10 20:15 UTC** — UI fixes: scenario title as prominent heading at top of editor, updates on AI generation. Scenario dropdown fetches fresh from API on selection. Multiple React state flow fixes.

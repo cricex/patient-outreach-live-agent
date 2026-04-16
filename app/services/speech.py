@@ -6,8 +6,9 @@ Provides a clean async interface for the media bridge:
     - get_next_output_frame() → returns next synthesized audio frame (or None)
     - close() → tears down session
 
+Both ACS and Voice Live now operate at 24kHz — no resampling needed.
 The GA SDK handles VAD, turn detection, noise suppression, and echo cancellation
-natively — no manual flush timers or upsampling needed.
+natively.
 """
 
 from __future__ import annotations
@@ -27,37 +28,9 @@ from .call_history import call_history
 
 logger = logging.getLogger("app.voice")
 
-# ACS streams 16kHz PCM16 mono; Voice Live operates at 24kHz.
-# Output frames from VL are buffered at 24kHz then downsampled to 16kHz.
-ACS_FRAME_BYTES = settings.media_frame_bytes   # 640 bytes = 20ms @ 16kHz
-VL_FRAME_BYTES = 960                            # 960 bytes = 20ms @ 24kHz
-
-
-def _downsample_24k_to_16k(pcm_24k: bytes) -> bytes:
-    """Downsample 24kHz PCM16 mono to 16kHz using linear interpolation.
-
-    Ratio 3:2 — every 3 input samples produce 2 output samples.
-    """
-    samples_in = array.array("h")
-    samples_in.frombytes(pcm_24k)
-    n_in = len(samples_in)
-    if n_in < 2:
-        return pcm_24k
-
-    n_out = (n_in * 2 + 2) // 3
-    samples_out = array.array("h", [0] * n_out)
-
-    for i in range(n_out):
-        src = i * 1.5
-        idx = int(src)
-        frac = src - idx
-        if idx + 1 < n_in:
-            val = samples_in[idx] + frac * (samples_in[idx + 1] - samples_in[idx])
-        else:
-            val = samples_in[min(idx, n_in - 1)]
-        samples_out[i] = max(-32768, min(32767, int(val)))
-
-    return samples_out.tobytes()
+# ACS and Voice Live both run at 24kHz PCM16 mono.
+# 20ms frame = 480 samples × 2 bytes = 960 bytes.
+FRAME_BYTES = settings.media_frame_bytes  # 960
 
 
 def _calculate_rms(pcm_bytes: bytes) -> float:
@@ -72,32 +45,6 @@ def _calculate_rms(pcm_bytes: bytes) -> float:
     rms = (sum_sq / len(samples)) ** 0.5
     return min(1.0, rms / 16384.0)  # Normalize: 16384 = half of int16 max
 
-
-def _upsample_16k_to_24k(pcm_16k: bytes) -> bytes:
-    """Upsample 16kHz PCM16 mono to 24kHz using linear interpolation.
-
-    Ratio 2:3 — every 2 input samples produce 3 output samples.
-    """
-    samples_in = array.array("h")
-    samples_in.frombytes(pcm_16k)
-    n_in = len(samples_in)
-    if n_in < 2:
-        return pcm_16k
-
-    n_out = (n_in * 3 + 1) // 2
-    samples_out = array.array("h", [0] * n_out)
-
-    for i in range(n_out):
-        src = i * (2.0 / 3.0)
-        idx = int(src)
-        frac = src - idx
-        if idx + 1 < n_in:
-            val = samples_in[idx] + frac * (samples_in[idx + 1] - samples_in[idx])
-        else:
-            val = samples_in[min(idx, n_in - 1)]
-        samples_out[i] = max(-32768, min(32767, int(val)))
-
-    return samples_out.tobytes()
 
 # Import SDK — graceful fallback if not installed
 try:
@@ -233,16 +180,15 @@ class SpeechService:
     async def send_audio(self, pcm_bytes: bytes) -> None:
         """Stream raw PCM audio from caller to Voice Live input buffer.
 
-        ACS sends 16kHz; Voice Live expects 24kHz. Upsample before appending.
+        Both ACS and Voice Live operate at 24kHz — no resampling needed.
 
         Args:
-            pcm_bytes: Raw 16-bit PCM audio bytes at 16kHz from the caller.
+            pcm_bytes: Raw 16-bit PCM audio bytes at 24kHz from the caller.
         """
         if not (self._active and self._connection and pcm_bytes):
             return
         try:
-            upsampled = _upsample_16k_to_24k(pcm_bytes)
-            await self._connection.input_audio_buffer.append(audio=upsampled)
+            await self._connection.input_audio_buffer.append(audio=pcm_bytes)
             self._inbound_frame_count += 1
             # Emit RMS for waveform visualization every 5 frames (~100ms)
             if self._inbound_frame_count % 5 == 0:
@@ -362,17 +308,17 @@ class SpeechService:
         """Segment output audio into fixed-size frames for ACS.
 
         Voice Live sends variable-length 24kHz deltas. Buffer into 20ms
-        frames at 24kHz (960 bytes), downsample to 16kHz (640 bytes),
-        then queue for the media bridge to send to ACS.
+        frames at 24kHz (960 bytes) and queue directly — both sides now
+        operate at 24kHz so no resampling is needed.
         """
         self._output_buffer.extend(audio_bytes)
-        while len(self._output_buffer) >= VL_FRAME_BYTES:
-            frame_24k = bytes(self._output_buffer[:VL_FRAME_BYTES])
-            del self._output_buffer[:VL_FRAME_BYTES]
-            frame_16k = _downsample_24k_to_16k(frame_24k)
+        while len(self._output_buffer) >= FRAME_BYTES:
+            frame = bytes(self._output_buffer[:FRAME_BYTES])
+            del self._output_buffer[:FRAME_BYTES]
             if len(self._output_queue) == self._output_queue.maxlen:
                 self._output_queue.popleft()
-            self._output_queue.append(frame_16k)
+                logger.debug("output queue full — dropped oldest frame")
+            self._output_queue.append(frame)
             # Emit RMS for agent waveform
-            rms = _calculate_rms(frame_16k)
+            rms = _calculate_rms(frame)
             event_bus.emit(EventType.AUDIO_RMS, channel="agent", rms=rms, session_id=self.session_id)

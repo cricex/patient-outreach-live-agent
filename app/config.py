@@ -70,7 +70,7 @@ class Settings(BaseModel):
     media_bidirectional: bool = True
     media_start_at_create: bool = True
     media_audio_channel_type: str = "mixed"
-    media_frame_bytes: int = 640
+    media_frame_bytes: int = 960
     media_frame_interval_ms: int = 20
     media_enable_voicelive_in: bool = True
     media_enable_voicelive_out: bool = True
@@ -163,16 +163,16 @@ def load_settings() -> Settings:
         foundry_inference_model=os.getenv("FOUNDRY_INFERENCE_MODEL", "gpt-4o"),
         foundry_inference_api_key=os.getenv("FOUNDRY_INFERENCE_API_KEY"),
         # Call lifecycle
-        call_timeout_sec=int(os.getenv("CALL_TIMEOUT_SEC", "90")),
+        call_timeout_sec=int(os.getenv("CALL_TIMEOUT_SEC", "600")),
         call_idle_timeout_sec=int(
-            os.getenv("CALL_IDLE_TIMEOUT_SEC", os.getenv("CALL_TIMEOUT_SEC", "90"))
+            os.getenv("CALL_IDLE_TIMEOUT_SEC", os.getenv("CALL_TIMEOUT_SEC", "120"))
         ),
         enable_call_recording=_env_bool("ENABLE_CALL_RECORDING", "false"),
         # Media bridge
         media_bidirectional=_env_bool("MEDIA_BIDIRECTIONAL", "true"),
         media_start_at_create=_env_bool("MEDIA_START_AT_CREATE", "true"),
         media_audio_channel_type=os.getenv("MEDIA_AUDIO_CHANNEL_TYPE", "mixed").lower(),
-        media_frame_bytes=int(os.getenv("MEDIA_FRAME_BYTES", "640")),
+        media_frame_bytes=int(os.getenv("MEDIA_FRAME_BYTES", "960")),
         media_frame_interval_ms=int(os.getenv("MEDIA_FRAME_INTERVAL_MS", "20")),
         media_enable_voicelive_in=_env_bool("MEDIA_ENABLE_VL_IN", "true"),
         media_enable_voicelive_out=_env_bool("MEDIA_ENABLE_VL_OUT", "true"),

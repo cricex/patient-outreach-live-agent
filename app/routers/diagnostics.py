@@ -7,8 +7,9 @@ import ssl
 import time
 from urllib.parse import urlparse
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
+from ..auth import get_session_id
 from ..config import settings
 from ..models.state import app_state
 
@@ -23,9 +24,11 @@ async def health():
 
 
 @router.get("/status")
-async def status():
-    """Runtime snapshot: call state, Voice Live session, media metrics."""
-    return app_state.snapshot()
+async def status(request: Request):
+    """Runtime snapshot scoped to the requesting session."""
+    token = request.headers.get("x-auth-token", "")
+    session_id = get_session_id(token)
+    return app_state.snapshot(session_id)
 
 
 @router.get("/acs/health")

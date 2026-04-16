@@ -1,8 +1,8 @@
 """Call lifecycle orchestrator.
 
-Manages the active CallSession, coordinates with ACS for PSTN calls,
+Manages per-session CallSessions, coordinates with ACS for PSTN calls,
 handles webhook events, and provides the speech service accessor
-for the media bridge.
+for the media bridge.  Supports multiple concurrent calls (one per session).
 """
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ from azure.communication.callautomation import (
 )
 from azure.core.exceptions import AzureError
 
+from ..auth import DEFAULT_SESSION_ID
 from ..config import settings
 from ..models.state import AppState, app_state
 from .call_session import CallSession
@@ -31,38 +32,58 @@ logger = logging.getLogger("app.call")
 
 
 class CallManager:
-    """Singleton service that orchestrates call lifecycle.
+    """Service that orchestrates call lifecycle across sessions.
 
-    Owns the active CallSession and provides accessors for
-    the media bridge and route handlers.
+    Tracks per-session CallSessions and media token mappings so each
+    authenticated user has an isolated call experience.
     """
 
     def __init__(self) -> None:
-        self._session: CallSession | None = None
-        self._hangup_future: asyncio.Future | None = None
-        self._recording_id: str | None = None
+        self._sessions: dict[str, CallSession] = {}  # session_id → CallSession
+        self._hangup_futures: dict[str, asyncio.Future] = {}
+        self._recording_ids: dict[str, str] = {}  # session_id → recording_id
+        self._media_tokens: dict[str, str] = {}  # media_token → session_id
+        self._call_to_session: dict[str, str] = {}  # call_id → session_id
+
+    def get_session(self, session_id: str) -> CallSession | None:
+        return self._sessions.get(session_id)
 
     @property
     def current_session(self) -> CallSession | None:
-        return self._session
+        """Backward compat — returns default session's call."""
+        return self._sessions.get(DEFAULT_SESSION_ID)
 
-    def get_speech(self):
-        """Return the active SpeechService or None.
+    def get_speech(self, session_id: str | None = None):
+        """Return the active SpeechService for a session, or None.
 
         This is passed as a callable to the media bridge so it can
         access the speech service without circular imports.
         """
-        if self._session and self._session.active:
-            return self._session.speech
+        sid = session_id or DEFAULT_SESSION_ID
+        session = self._sessions.get(sid)
+        if session and session.active:
+            return session.speech
         return None
+
+    def get_speech_for_media_token(self, media_token: str):
+        """Resolve a media token to its session's SpeechService."""
+        sid = self._media_tokens.get(media_token)
+        if sid:
+            return self.get_speech(sid)
+        return None
+
+    def get_session_id_for_media_token(self, media_token: str) -> str:
+        """Resolve a media token to its session_id."""
+        return self._media_tokens.get(media_token, DEFAULT_SESSION_ID)
 
     async def start_call(
         self,
+        session_id: str,
         target_phone: str | None = None,
         system_prompt: str | None = None,
         simulate: bool = False,
     ) -> tuple[str, str, str]:
-        """Start a new call (real ACS or simulated).
+        """Start a new call for a specific session.
 
         Returns:
             (call_id, destination, prompt_used)
@@ -82,18 +103,18 @@ class CallManager:
                 "(provide target_phone_number or set TARGET_PHONE_NUMBER)"
             )
 
-        # Clean up any prior session
-        if self._session:
-            await self._session.stop("NewCall")
-            self._session = None
+        # Clean up any prior session for this user
+        if session_id in self._sessions:
+            await self._sessions[session_id].stop("NewCall")
+            del self._sessions[session_id]
 
         if simulate:
             call_id = f"sim-{int(time.time() * 1000)}"
         else:
-            call_id = await self._create_acs_call(dest, prompt)
+            call_id = await self._create_acs_call(session_id, dest, prompt)
 
         # Create session and start Voice Live
-        await app_state.begin_call(call_id, prompt)
+        await app_state.begin_call(session_id, call_id, prompt)
         call_history.begin_call(
             call_id=call_id,
             destination=dest or "SIMULATED",
@@ -102,17 +123,21 @@ class CallManager:
             model=settings.voicelive_model,
             simulated=simulate,
         )
-        event_bus.emit(EventType.CALL_STARTED, call_id=call_id, destination=dest or "SIMULATED")
-        self._session = CallSession(call_id, app_state)
+        event_bus.emit(EventType.CALL_STARTED, session_id=session_id, call_id=call_id, destination=dest or "SIMULATED")
+
+        session = CallSession(call_id, app_state, session_id)
+        self._sessions[session_id] = session
+        self._call_to_session[call_id] = session_id
 
         # Set up auto-hangup callback
         loop = asyncio.get_running_loop()
-        self._hangup_future = loop.create_future()
-        self._session.set_hangup_callback(self._hangup_future)
-        asyncio.create_task(self._watch_hangup_future(call_id))
+        hangup_future = loop.create_future()
+        session.set_hangup_callback(hangup_future)
+        self._hangup_futures[session_id] = hangup_future
+        asyncio.create_task(self._watch_hangup_future(session_id, call_id))
 
         try:
-            await asyncio.wait_for(self._session.start(prompt), timeout=30.0)
+            await asyncio.wait_for(session.start(prompt), timeout=30.0)
         except Exception as exc:
             # Call is placed but speech failed — don't crash the call
             logger.warning("Speech session start failed: %s", exc)
@@ -123,19 +148,20 @@ class CallManager:
         self, event_type: str, call_id: str, data: dict
     ) -> None:
         """Process an ACS webhook event."""
-        app_state.update_last_event()
+        session_id = self._call_to_session.get(call_id, DEFAULT_SESSION_ID)
+        app_state.update_last_event(session_id)
 
         if event_type.endswith("CallConnected"):
-            # Start speech session if not already running
-            if self._session and not self._session.active:
+            session = self._sessions.get(session_id)
+            if session and not session.active:
                 prompt = (
-                    app_state.current_call.prompt
-                    if app_state.current_call
+                    app_state.get_call(session_id).prompt
+                    if app_state.get_call(session_id)
                     else settings.default_system_prompt
                 )
                 try:
                     await asyncio.wait_for(
-                        self._session.start(prompt), timeout=30.0
+                        session.start(prompt), timeout=30.0
                     )
                 except Exception as exc:
                     logger.warning(
@@ -164,34 +190,31 @@ class CallManager:
                                 call_locator=ServerCallLocator(server_call_id),
                             ),
                         )
-                        self._recording_id = getattr(
-                            recording_resp, "recording_id", None
-                        )
-                        if self._recording_id:
-                            call_history.set_recording_id(self._recording_id)
-                            logger.info(
-                                "Recording started recording_id=%s",
-                                self._recording_id,
-                            )
+                        rec_id = getattr(recording_resp, "recording_id", None)
+                        if rec_id:
+                            self._recording_ids[session_id] = rec_id
+                            call_history.set_recording_id(rec_id)
+                            logger.info("Recording started recording_id=%s", rec_id)
                 except Exception as exc:
                     logger.warning("Failed to start recording: %s", exc)
 
         elif event_type.endswith("MediaStreamingStarted"):
-            app_state.media.started = True
+            app_state.get_media(session_id).started = True
 
         elif event_type.endswith("CallDisconnected") or event_type.endswith(
             "CallEnded"
         ):
-            await self.end_call(call_id, reason=event_type)
+            await self.end_call(session_id, call_id=call_id, reason=event_type)
 
     async def end_call(
-        self, call_id: str | None = None, reason: str | None = None
+        self, session_id: str, call_id: str | None = None, reason: str | None = None
     ) -> str | None:
-        """End the active call and clean up."""
-        if not self._session:
+        """End the call for a specific session and clean up."""
+        session = self._sessions.get(session_id)
+        if not session:
             return None
 
-        actual_id = call_id or self._session.call_id
+        actual_id = call_id or session.call_id
 
         # Try ACS hangup (best-effort, skip for timeout/idle — session already dead)
         if reason != "Timeout" and reason != "Idle":
@@ -206,43 +229,49 @@ class CallManager:
                 logger.debug("ACS hangup failed (continuing)")
 
         # Stop recording if active
-        if self._recording_id:
+        rec_id = self._recording_ids.pop(session_id, None)
+        if rec_id:
             try:
                 client = self._acs_client()
                 loop = asyncio.get_running_loop()
                 await loop.run_in_executor(
-                    None, lambda: client.stop_recording(self._recording_id)
+                    None, lambda: client.stop_recording(rec_id)
                 )
-                logger.info(
-                    "Recording stopped recording_id=%s", self._recording_id
-                )
+                logger.info("Recording stopped recording_id=%s", rec_id)
             except Exception as exc:
                 logger.warning("Failed to stop recording: %s", exc)
-            self._recording_id = None
 
-        event_bus.emit(EventType.CALL_ENDED, call_id=actual_id, reason=reason)
-        await self._session.stop(reason)
+        event_bus.emit(EventType.CALL_ENDED, session_id=session_id, call_id=actual_id, reason=reason)
+        await session.stop(reason)
         call_history.end_call(reason)
-        self._session = None
-        event_bus.clear()
+
+        # Clean up mappings
+        del self._sessions[session_id]
+        self._call_to_session.pop(actual_id, None)
+        # Clean up media tokens for this session
+        stale_tokens = [t for t, sid in self._media_tokens.items() if sid == session_id]
+        for t in stale_tokens:
+            del self._media_tokens[t]
+        event_bus.clear(session_id)
 
         # Cancel hangup future if still pending
-        if self._hangup_future and not self._hangup_future.done():
-            self._hangup_future.cancel()
-        self._hangup_future = None
+        hangup_future = self._hangup_futures.pop(session_id, None)
+        if hangup_future and not hangup_future.done():
+            hangup_future.cancel()
 
-        logger.info("Call ended call_id=%s reason=%s", actual_id, reason)
+        logger.info("Call ended call_id=%s session_id=%s reason=%s", actual_id, session_id, reason)
         return actual_id
 
     # ---- Internal ----
 
-    async def _create_acs_call(self, dest: str, prompt: str) -> str:
+    async def _create_acs_call(self, session_id: str, dest: str, prompt: str) -> str:
         """Place an outbound PSTN call via ACS."""
         base_url = settings.app_base_url.rstrip("/")
         if base_url.startswith("http://"):
             raise ValueError("APP_BASE_URL must be https for ACS callbacks")
 
         token = f"m-{int(time.time() * 1000)}"
+        self._media_tokens[token] = session_id
         ws_host = base_url.split("://", 1)[1]
         transport_url = f"wss://{ws_host}/media/{token}"
 
@@ -256,7 +285,7 @@ class CallManager:
                 else MediaStreamingAudioChannelType.UNMIXED
             ),
             enable_bidirectional=settings.media_bidirectional,
-            audio_format="Pcm16KMono",
+            audio_format="Pcm24KMono",
             start_media_streaming=settings.media_start_at_create,
         )
 
@@ -289,12 +318,15 @@ class CallManager:
 
         return call_id
 
-    async def _watch_hangup_future(self, call_id: str) -> None:
+    async def _watch_hangup_future(self, session_id: str, call_id: str) -> None:
         """Wait for the hangup future and end the call when triggered."""
         try:
-            reason = await self._hangup_future
+            hangup_future = self._hangup_futures.get(session_id)
+            if not hangup_future:
+                return
+            reason = await hangup_future
             if reason:
-                await self.end_call(call_id, reason=reason)
+                await self.end_call(session_id, call_id=call_id, reason=reason)
         except asyncio.CancelledError:
             pass
         except Exception as exc:

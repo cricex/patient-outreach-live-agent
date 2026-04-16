@@ -23,6 +23,9 @@ PUBLIC_PREFIXES = ("/assets/", "/call/events")
 _allowed_passwords: set[str] = set()
 _auth_enabled: bool = False
 _active_tokens: set[str] = set()
+_token_sessions: dict[str, str] = {}
+
+DEFAULT_SESSION_ID = "default"
 
 
 def _is_public(path: str) -> bool:
@@ -102,8 +105,27 @@ def create_session_token(password: str) -> str | None:
     if not is_valid_password(password):
         return None
     token = secrets.token_urlsafe(32)
+    session_id = f"s-{secrets.token_urlsafe(16)}"
     _active_tokens.add(token)
+    _token_sessions[token] = session_id
     return token
+
+
+def get_session_id(token: str) -> str:
+    """Look up the session_id for an auth token.
+
+    Returns DEFAULT_SESSION_ID when auth is disabled or token not found,
+    so callers always get a valid session_id.
+    """
+    if not _auth_enabled:
+        return DEFAULT_SESSION_ID
+    return _token_sessions.get(token, DEFAULT_SESSION_ID)
+
+
+def revoke_token(token: str) -> None:
+    """Remove a token and its session mapping."""
+    _active_tokens.discard(token)
+    _token_sessions.pop(token, None)
 
 
 def is_valid_token(token: str) -> bool:

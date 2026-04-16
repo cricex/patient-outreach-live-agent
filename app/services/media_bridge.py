@@ -30,6 +30,7 @@ async def handle_media_ws(
     token: str,
     get_speech,  # Callable that returns the current SpeechService | None
     app_state: AppState,
+    session_id: str = "default",
 ) -> None:
     """Main media WebSocket handler.
 
@@ -39,6 +40,7 @@ async def handle_media_ws(
         get_speech: Callable returning the current SpeechService (or None).
             This avoids importing or referencing global state.
         app_state: Application state for recording media metrics.
+        session_id: Auth session this media stream belongs to.
     """
     t0 = time.perf_counter_ns()
 
@@ -57,13 +59,24 @@ async def handle_media_ws(
 
     t1 = time.perf_counter_ns()
     logger.info("MEDIA open token=%s handshake_us=%d", token, (t1 - t0) // 1000)
-    app_state.media.ws_connected_at = time.time()
+    media = app_state.get_media(session_id)
+    media.ws_connected_at = time.time()
 
-    # Concurrent outbound loop (Voice Live → ACS)
+    # Concurrent outbound loop (Voice Live → ACS) with wall-clock-aligned timing
     async def outbound_loop() -> None:
         interval = settings.media_frame_interval_ms / 1000.0
+        loop = asyncio.get_running_loop()
+        next_send = loop.time()
         while True:
-            await asyncio.sleep(interval)
+            next_send += interval
+            now = loop.time()
+            delay = next_send - now
+            if delay > 0:
+                await asyncio.sleep(delay)
+            elif delay < -1.0:
+                # Clock jumped or massive lag — reset to avoid burst-sending
+                next_send = loop.time()
+                continue
             speech = get_speech()
             if not (speech and speech.active and settings.media_enable_voicelive_out):
                 continue
@@ -74,7 +87,7 @@ async def handle_media_ws(
                 b64 = base64.b64encode(frame).decode("ascii")
                 payload = json.dumps({"kind": "AudioData", "audioData": {"data": b64}})
                 await ws.send_text(payload)
-                app_state.media.record_outbound(1, len(frame))
+                app_state.get_media(session_id).record_outbound(1, len(frame))
             except Exception as exc:
                 logger.debug("outbound send error: %s", exc)
                 return
@@ -96,11 +109,11 @@ async def handle_media_ws(
             if text:
                 pcm = _extract_pcm_from_json(text)
                 if pcm:
-                    await _forward_inbound(pcm, speech, app_state)
+                    await _forward_inbound(pcm, speech, app_state, session_id)
                 continue
 
             if raw_bytes:
-                await _forward_inbound(raw_bytes, speech, app_state)
+                await _forward_inbound(raw_bytes, speech, app_state, session_id)
 
     except Exception as exc:
         logger.debug("media ws loop error token=%s: %s", token, exc)
@@ -144,6 +157,7 @@ async def _forward_inbound(
     pcm: bytes,
     speech,  # SpeechService | None
     app_state: AppState,
+    session_id: str = "default",
 ) -> None:
     """Slice PCM into frames and forward to Voice Live."""
     if not pcm:
@@ -151,7 +165,7 @@ async def _forward_inbound(
 
     frame_count = len(pcm) // FRAME_BYTES
     if frame_count:
-        app_state.media.record_inbound(frame_count, len(pcm))
+        app_state.get_media(session_id).record_inbound(frame_count, len(pcm))
 
     if not (speech and speech.active and settings.media_enable_voicelive_in):
         return
