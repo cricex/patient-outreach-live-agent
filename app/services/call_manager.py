@@ -140,7 +140,7 @@ class CallManager:
             await asyncio.wait_for(session.start(prompt), timeout=30.0)
         except Exception as exc:
             # Call is placed but speech failed — don't crash the call
-            logger.warning("Speech session start failed: %s", exc)
+            logger.warning("Speech session start failed session=%s: %s", session_id, exc)
 
         return call_id, dest or "SIMULATED", prompt
 

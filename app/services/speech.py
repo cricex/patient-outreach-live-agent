@@ -198,7 +198,7 @@ class SpeechService:
                 event_bus.emit(EventType.AUDIO_INBOUND, frames=self._inbound_frame_count, session_id=self.session_id)
                 self._inbound_frame_count = 0
         except Exception as exc:
-            logger.debug("audio send error: %s", exc)
+            logger.debug("audio send error id=%s: %s", self.session_id, exc)
 
     async def get_next_output_frame(self) -> bytes | None:
         """Pop next output audio frame from queue, or None if empty."""
@@ -302,7 +302,7 @@ class SpeechService:
         except asyncio.CancelledError:
             pass
         except Exception as exc:
-            logger.debug("event consumer error: %s", exc)
+            logger.debug("event consumer error id=%s: %s", self.session_id, exc)
 
     def _buffer_output_audio(self, audio_bytes: bytes) -> None:
         """Segment output audio into fixed-size frames for ACS.

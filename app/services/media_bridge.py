@@ -54,11 +54,11 @@ async def handle_media_ws(
         if ws.application_state == WebSocketState.CONNECTED:
             await ws.send_text('{"type":"ack"}')
     except Exception as exc:
-        logger.warning("ack send failed token=%s: %s", token, exc)
+        logger.warning("ack send failed token=%s session=%s: %s", token, session_id, exc)
         return
 
     t1 = time.perf_counter_ns()
-    logger.info("MEDIA open token=%s handshake_us=%d", token, (t1 - t0) // 1000)
+    logger.info("MEDIA open token=%s session=%s handshake_us=%d", token, session_id, (t1 - t0) // 1000)
     media = app_state.get_media(session_id)
     media.ws_connected_at = time.time()
 
@@ -89,7 +89,7 @@ async def handle_media_ws(
                 await ws.send_text(payload)
                 app_state.get_media(session_id).record_outbound(1, len(frame))
             except Exception as exc:
-                logger.debug("outbound send error: %s", exc)
+                logger.debug("outbound send error session=%s: %s", session_id, exc)
                 return
 
     outbound_task = asyncio.create_task(outbound_loop())
@@ -116,14 +116,14 @@ async def handle_media_ws(
                 await _forward_inbound(raw_bytes, speech, app_state, session_id)
 
     except Exception as exc:
-        logger.debug("media ws loop error token=%s: %s", token, exc)
+        logger.debug("media ws loop error token=%s session=%s: %s", token, session_id, exc)
     finally:
         outbound_task.cancel()
         try:
             await outbound_task
         except (asyncio.CancelledError, Exception):
             pass
-        logger.info("MEDIA closed token=%s", token)
+        logger.info("MEDIA closed token=%s session=%s", token, session_id)
 
 
 def _extract_pcm_from_json(text: str) -> bytes | None:
