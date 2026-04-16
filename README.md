@@ -165,8 +165,8 @@ Configuration is loaded via `python-dotenv` with layered files: `.env` → `.env
 
 | Variable | Env name | Default | Description |
 |----------|----------|---------|-------------|
-| Call timeout | `CALL_TIMEOUT_SEC` | `90` | Hard max call duration (seconds) |
-| Idle timeout | `CALL_IDLE_TIMEOUT_SEC` | `90` | Idle timeout (defaults to call timeout) |
+| Call timeout | `CALL_TIMEOUT_SEC` | `600` | Hard max call duration (seconds) |
+| Idle timeout | `CALL_IDLE_TIMEOUT_SEC` | `120` | Idle timeout (defaults to call timeout) |
 | Call recording | `ENABLE_CALL_RECORDING` | `false` | Enable ACS call recording |
 
 ### Media bridge
@@ -176,7 +176,7 @@ Configuration is loaded via `python-dotenv` with layered files: `.env` → `.env
 | Bidirectional | `MEDIA_BIDIRECTIONAL` | `true` | Two-way media stream with ACS |
 | Start at create | `MEDIA_START_AT_CREATE` | `true` | Begin media when call is created |
 | Channel type | `MEDIA_AUDIO_CHANNEL_TYPE` | `mixed` | `mixed` (mono) or `unmixed` |
-| Frame bytes | `MEDIA_FRAME_BYTES` | `640` | ACS frame size (20ms @ 16kHz mono PCM) |
+| Frame bytes | `MEDIA_FRAME_BYTES` | `960` | ACS frame size (20ms @ 24kHz mono PCM) |
 | Frame interval | `MEDIA_FRAME_INTERVAL_MS` | `20` | Frame cadence |
 | VL inbound | `MEDIA_ENABLE_VL_IN` | `true` | Forward caller audio to Voice Live |
 | VL outbound | `MEDIA_ENABLE_VL_OUT` | `true` | Forward Voice Live audio to caller |

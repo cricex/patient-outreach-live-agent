@@ -65,14 +65,14 @@ calls.py        api.py         diagnostics.py   media.py
     │               │                               │
     ▼               ▼                               ▼
 [CallManager]   [PromptStore]              [media_bridge handler]
-singleton       JSON CRUD                  get_speech callable (DI)
-    │           [InferenceService]          concurrent in/out loops
+multi-session   JSON CRUD                  get_speech(session_id) (DI)
+per-token       [InferenceService]          concurrent in/out loops
     │           Foundry chat completions        │
     ▼                                           │
-[CallSession (per-call)]                        │
+[CallSession (per-call, per-session)]           │
     ├── SpeechService (Voice Live 1.1.0)  ◄─────┘
     ├── timeout watcher (Future)
-    └── EventBus publishing
+    └── EventBus publishing (session-scoped)
 ```
 
 **Key endpoints:**
@@ -99,6 +99,7 @@ singleton       JSON CRUD                  get_speech callable (DI)
 | Module | Role |
 |--------|------|
 | `main.py` | FastAPI app factory (~50 lines). Mounts 5 routers, serves React static build, logs SDK versions on startup |
+| `auth.py` | Shared-password auth gate. Token→session_id mapping for session isolation. `get_session_id(token)` resolves auth tokens to unique session identifiers. Auth disabled by default for local dev |
 | `config.py` | Pydantic `Settings` model with env loading. Required fields validated. Voice Live GA features (noise reduction, echo cancellation, VAD). Foundry inference config (optional) |
 | `logging_config.py` | RotatingFileHandler to `logs/app.log` + console. Format: `%(asctime)s %(levelname).1s %(name)s %(message)s` |
 | `_ssl_patch.py` | TLS 1.3 workaround, imported first via `__init__.py` |
@@ -107,29 +108,29 @@ singleton       JSON CRUD                  get_speech callable (DI)
 
 | Module | Routes |
 |--------|--------|
-| `calls.py` | `/call/start`, `/call/hangup`, `/call/events` → delegates to `CallManager` |
-| `diagnostics.py` | `/health`, `/status`, `/acs/health` → reads `AppState` |
-| `media.py` | `/media/{token}` WS → wires `call_manager.get_speech` into `media_bridge` |
+| `calls.py` | `/call/start`, `/call/hangup`, `/call/events` → delegates to `CallManager` with session_id from auth token |
+| `diagnostics.py` | `/health`, `/status`, `/acs/health` → reads `AppState` scoped by session_id |
+| `media.py` | `/media/{token}` WS → resolves media token to session_id, wires `call_manager.get_speech(session_id)` into `media_bridge` |
 | `api.py` | `/api/prompts` CRUD → `PromptStore`; `/api/prompts/generate` → `InferenceService` |
-| `ws.py` | `/ws/diagnostics` → subscribes to `EventBus`; `/ws/call-status` → polls `AppState` |
+| `ws.py` | `/ws/diagnostics` → subscribes to `EventBus` filtered by session_id; `/ws/call-status` → polls `AppState.snapshot(session_id)` |
 
 ### `app/services/` — Business Logic
 
 | Module | Role |
 |--------|------|
-| `call_manager.py` | Singleton orchestrating call lifecycle. Creates/destroys `CallSession`, exposes `get_speech()` for media bridge. Publishes `CALL_STARTED`/`CALL_ENDED` events |
-| `call_session.py` | Per-call object owning `SpeechService` + timeout watcher (Future-based). Publishes `VL_SESSION_STARTED`/`ENDED` events |
-| `speech.py` | Voice Live GA 1.1.0 wrapper. Native noise suppression, echo cancellation, barge-in, VAD. Publishes transcript, audio, and error events to EventBus |
-| `media_bridge.py` | WebSocket media handler. Dependency-injected via `get_speech` callable (no circular imports). Concurrent inbound/outbound loops |
+| `call_manager.py` | Multi-session call orchestrator. Manages per-session `CallSession` instances, tracks `media_token → session_id` mappings, exposes `get_speech(session_id)` for media bridge. Supports concurrent calls (one per auth session). Publishes `CALL_STARTED`/`CALL_ENDED` events |
+| `call_session.py` | Per-call object owning `SpeechService` + timeout watcher (Future-based). Scoped by `session_id`. Publishes `VL_SESSION_STARTED`/`ENDED` events |
+| `speech.py` | Voice Live GA 1.1.0 wrapper. Both ACS and VL at 24kHz — no resampling. Native noise suppression, echo cancellation, barge-in, VAD. Publishes transcript, audio, and error events to EventBus |
+| `media_bridge.py` | WebSocket media handler. Dependency-injected via `get_speech(session_id)` callable (no circular imports). Session-scoped media metrics. Concurrent inbound/outbound loops with wall-clock-aligned timing |
 | `prompt_store.py` | JSON file CRUD for saved prompt sets in `data/prompts/`. `list_prompts()`, `get_prompt()`, `save_prompt()`, `delete_prompt()` |
-| `event_bus.py` | Async pub/sub for diagnostic events. 16 event types, per-subscriber `asyncio.Queue`, 50-event recent buffer for late joiners |
+| `event_bus.py` | Async pub/sub for diagnostic events. 16 event types, per-subscriber `asyncio.Queue`, session-scoped filtering. Subscribers can filter by `session_id`. 50-event recent buffer for late joiners |
 | `inference.py` | Azure AI Foundry `ChatCompletionsClient` wrapper for AI scenario generation. Reads meta-prompt from `prompts/meta_generate.md` |
 
 ### `app/models/` — Data Models
 
 | Module | Role |
 |--------|------|
-| `state.py` | `CallState`, `VoiceLiveState`, `MediaMetrics` dataclasses + `AppState` singleton (async-native with `asyncio.Lock`) |
+| `state.py` | `CallState`, `VoiceLiveState`, `MediaMetrics` dataclasses + `AppState` singleton (async-native with `asyncio.Lock`). State scoped per `session_id` — each auth token sees only its own call. Backward-compat properties delegate to `DEFAULT_SESSION_ID` |
 | `requests.py` | Pydantic request/response models: `StartCallRequest`, `StartCallResponse`, `HangupResponse`, `CallEventsResponse` |
 
 ### `frontend/` — React UI
