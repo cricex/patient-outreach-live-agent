@@ -14,6 +14,8 @@
 |------|--------|-------|
 | Add session_id scoping to EventBus | ✅ | `DiagnosticEvent` gains `session_id` field (default `"default"`). `subscribe()` accepts optional `session_id` filter. `publish()` skips non-matching subscribers. `emit()` accepts `session_id` param. `get_recent()`/`clear()` support per-session filtering. Backward-compatible — callers without session_id see all events. All 27 passing tests still pass. `event_bus.py` — 2025-07-24 |
 | Refactor AppState per-session scoping | ✅ | Replaced single-slot `current_call`/`voicelive`/`media` with per-session dicts keyed by `session_id`. All methods accept `session_id` with backward-compatible fallback to `DEFAULT_SESSION_ID`. Backward-compat properties (`current_call`, `last_call`, `voicelive`, `media`, `last_event_at`) preserved for tests and un-migrated code. All 30 tests pass. `app/models/state.py` — 2026-04-16 |
+| Auth session lifecycle tests | ✅ | Added `tests/test_auth_sessions.py` (4 tests: revoke clears session, auth-disabled default, multiple tokens unique sessions, mapping persistence) and session-scoped `/status` test in `tests/test_health.py` (token A sees its call, token B sees none). All 5 new tests pass; 51/52 suite passes (1 pre-existing env failure). — 2026-04-16 |
+| Multi-session integration tests | ✅ | Added `tests/test_multi_session.py` (3 tests): concurrent simulated calls with isolated `/status`, hangup isolation between sessions, unauthenticated default-session fallback. Uses `httpx.AsyncClient` + `ASGITransport` for async end-to-end testing through the real API. All 49 tests pass (1 pre-existing flaky `test_call_manager` excluded). — 2026-04-16 |
 
 ## UX Fixes
 
@@ -134,6 +136,7 @@
 ## Log
 
 <!-- Entries prepended newest-first -->
+- **2026-04-16 15:00 UTC** — CallManager unit tests: added `tests/test_call_manager.py` with 6 tests covering simulated call creation, get_speech routing, media token resolution, end_call cleanup, and concurrent session independence. Full suite 52/52 passing.
 - **2026-04-16 14:30 UTC** — Three production fixes: (1) Call timeout defaults changed from 90s→600s hard / 120s idle. (2) Audio quality: eliminated all resampling by switching ACS to Pcm24KMono (matching Voice Live's native 24kHz), clock-aligned outbound timing to prevent drift, frame drop logging. (3) Session isolation: per-token session_ids, per-session AppState/CallManager/EventBus scoping, concurrent calls supported, media WS routing by session. 15 files changed, 8 new tests (38 total). All pass.
 - **2025-07-26 UTC** — Audio quality fix: eliminated resampling by matching ACS and Voice Live at 24kHz (Pcm24KMono, 960-byte frames). Removed `_upsample_16k_to_24k` and `_downsample_24k_to_16k`. Wall-clock-aligned outbound timing in media_bridge to prevent drift. Frame drop logging added. Tests updated (30/30 passing). Files: config.py, speech.py, media_bridge.py, call_manager.py, test_resample.py.
 - **2026-04-10 21:50 UTC** — Critical fix: call_brief was never sent to Voice Live. calls.py now combines system_prompt + call_brief before passing to call_manager. Agent now correctly uses scenario context (patient names, roles, etc.)
