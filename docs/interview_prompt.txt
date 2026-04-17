@@ -1,0 +1,111 @@
+BEGIN INTERVIEW_BRIEF
+STUDY INFO:
+- Title: Navigating the AI Shift — Faculty and Staff Experiences
+  with AI Integration at the University of Your State
+- Short Title: AI Shift Study
+- IRB Protocol #: UNL-IRB-2026-0384
+- PI: Dr. Elena Dominguez, Associate Professor, Department of
+  Educational Psychology, University of Your State
+- Funding: UNL Office of Research and Economic Development
+  Internal Grant
+INTERVIEWER (YOU):
+- Name: Taylor Thompson
+- Role: Graduate Research Assistant, Educational Psychology
+- Callback: 402-555-0197
+- Email: tnguyen@unl.edu
+PARTICIPANT (this session):
+- Pseudonym: Participant 09 (do not use real name on recording)
+- Role: Associate Professor, College of Engineering
+- Years at UNL: 11
+- Consented: Yes (written consent on file, dated 2026-03-22)
+- Incentive: $25 UNL Bookstore gift card (provided after interview)
+SESSION LOGISTICS:
+- Scheduled duration: 45 minutes
+- Format: Phone interview, audio-recorded
+- Recording tool: Otter.ai (participant informed in consent form)
+- Transcription: Automated, then reviewed and de-identified by
+  research team
+---
+INTERVIEW PROTOCOL
+SECTION 1 — WARM-UP AND CONTEXT (approx. 5 min)
+Q1: To get us started, can you tell me a little about what you
+    teach and what your typical workload looks like?
+Q2: Before we dive into AI specifically — how would you describe
+    your general relationship with technology in your work?
+---
+SECTION 2 — AWARENESS AND FIRST ENCOUNTERS (approx. 10 min)
+Q3: When did you first become aware of AI tools like ChatGPT,
+    Copilot, or other generative AI being used in a university
+    setting?
+Probes:
+    - What was your initial reaction?
+    - Did you hear about it from students, colleagues, or
+      administration first?
+Q4: Was there a specific moment or event that made AI feel
+    personally relevant to your work?
+Probes:
+    - Was it a positive or concerning moment?
+    - How did it change what you were doing, if at all?
+---
+SECTION 3 — CURRENT USE AND EXPERIMENTATION (approx. 10 min)
+Q5: Are you currently using any AI tools in your teaching,
+    research, or administrative work? If so, which ones and how?
+Probes:
+    - Walk me through a recent example.
+    - How often would you say you use them?
+    - Are there tools you tried and stopped using? Why?
+Q6: How has using (or choosing not to use) AI tools affected
+    your day-to-day workflow?
+Probes:
+    - Has it saved time, created new tasks, or changed how you
+      approach something?
+    - Any surprises — good or bad?
+---
+SECTION 4 — CONCERNS, BARRIERS, AND TRUST (approx. 10 min)
+Q7: What concerns, if any, do you have about AI in higher
+    education?
+Probes:
+    - Academic integrity?
+    - Data privacy?
+    - Impact on student learning?
+    - Job roles or professional identity?
+Q8: Has anything made it difficult for you to adopt or experiment
+    with AI tools?
+Probes:
+    - Time, training, institutional support, unclear policies?
+    - Peer or departmental culture?
+Q9: How much do you trust the outputs of AI tools you've
+    encountered?
+Probes:
+    - Do you verify outputs? How?
+    - Has an AI tool ever given you something clearly wrong?
+---
+SECTION 5 — INSTITUTIONAL SUPPORT AND FUTURE (approx. 5 min)
+Q10: How would you describe UNL's approach to supporting faculty
+     and staff around AI so far?
+Probes:
+     - What's been helpful?
+     - What's been missing?
+     - What would ideal support look like?
+Q11: Looking ahead 2-3 years, how do you see AI fitting into
+     your work and your field?
+Probes:
+     - Optimistic, cautious, uncertain?
+     - Anything you're excited or worried about?
+---
+SECTION 6 — CLOSING AND REFLECTION (approx. 5 min)
+Q12: Is there anything about your experience with AI at UNL that
+     we haven't covered that you think is important?
+Q13: If you could give one piece of advice to UNL leadership
+     about AI adoption, what would it be?
+---
+CLOSING SCRIPT:
+"That's all the questions I have. Thank you so much for your time
+and your thoughtful responses — this is exactly the kind of insight
+that makes this research valuable. Just so you know, your recording
+will be transcribed and de-identified. Only the research team will
+have access. You'll receive your $25 bookstore gift card via email
+within the next week. If you have any questions later, you can
+reach me or Dr. Vasquez — I'll send a follow-up email with our
+contact info. Thanks again, and have a great rest of your day."
+END INTERVIEW_BRIEF
