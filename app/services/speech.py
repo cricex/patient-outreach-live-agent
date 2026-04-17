@@ -74,8 +74,9 @@ class SpeechService:
     Created per-call by CallSession, not shared across calls.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, auth_session_id: str = "default") -> None:
         self.session_id: str = str(uuid.uuid4())
+        self._auth_session_id = auth_session_id
         self.voice: str | None = None
         self.model: str | None = None
         self._active: bool = False
@@ -193,9 +194,9 @@ class SpeechService:
             # Emit RMS for waveform visualization every 5 frames (~100ms)
             if self._inbound_frame_count % 5 == 0:
                 rms = _calculate_rms(pcm_bytes)
-                event_bus.emit(EventType.AUDIO_RMS, channel="caller", rms=rms, session_id=self.session_id)
+                event_bus.emit(EventType.AUDIO_RMS, session_id=self._auth_session_id, channel="caller", rms=rms, vl_session_id=self.session_id)
             if self._inbound_frame_count >= 50:
-                event_bus.emit(EventType.AUDIO_INBOUND, frames=self._inbound_frame_count, session_id=self.session_id)
+                event_bus.emit(EventType.AUDIO_INBOUND, session_id=self._auth_session_id, frames=self._inbound_frame_count, vl_session_id=self.session_id)
                 self._inbound_frame_count = 0
         except Exception as exc:
             logger.debug("audio send error id=%s: %s", self.session_id, exc)
@@ -264,25 +265,25 @@ class SpeechService:
 
                 if etype == ServerEventType.SESSION_UPDATED:
                     self._session_ready.set()
-                    event_bus.emit(EventType.VL_SESSION_READY, session_id=self.session_id)
+                    event_bus.emit(EventType.VL_SESSION_READY, session_id=self._auth_session_id, vl_session_id=self.session_id)
                     logger.info("Voice Live session ready")
 
                 elif etype == ServerEventType.RESPONSE_AUDIO_DELTA:
                     delta = getattr(event, "delta", None)
                     if delta:
                         self._buffer_output_audio(delta)
-                        event_bus.emit(EventType.AUDIO_OUTBOUND, frames=len(delta), session_id=self.session_id)
+                        event_bus.emit(EventType.AUDIO_OUTBOUND, session_id=self._auth_session_id, frames=len(delta), vl_session_id=self.session_id)
 
                 elif etype == ServerEventType.INPUT_AUDIO_BUFFER_SPEECH_STARTED:
                     # Barge-in: user started speaking, clear queued output
                     self._output_queue.clear()
                     self._output_buffer.clear()
-                    event_bus.emit(EventType.BARGE_IN, session_id=self.session_id)
+                    event_bus.emit(EventType.BARGE_IN, session_id=self._auth_session_id, vl_session_id=self.session_id)
                     logger.debug("barge-in: cleared output queue")
 
                 elif etype == ServerEventType.ERROR:
                     error = getattr(event, "error", None)
-                    event_bus.emit(EventType.VL_ERROR, message=str(getattr(error, "message", error)), session_id=self.session_id)
+                    event_bus.emit(EventType.VL_ERROR, session_id=self._auth_session_id, message=str(getattr(error, "message", error)), vl_session_id=self.session_id)
                     logger.error(
                         "Voice Live error: %s", getattr(error, "message", error)
                     )
@@ -290,13 +291,13 @@ class SpeechService:
                 elif etype == ServerEventType.CONVERSATION_ITEM_INPUT_AUDIO_TRANSCRIPTION_COMPLETED:
                     transcript = getattr(event, "transcript", "")
                     if transcript:
-                        event_bus.emit(EventType.TRANSCRIPT_USER, text=transcript, session_id=self.session_id)
+                        event_bus.emit(EventType.TRANSCRIPT_USER, session_id=self._auth_session_id, text=transcript, vl_session_id=self.session_id)
                         call_history.add_transcript_turn("user", transcript)
 
                 elif etype == ServerEventType.RESPONSE_AUDIO_TRANSCRIPT_DONE:
                     transcript = getattr(event, "transcript", "")
                     if transcript:
-                        event_bus.emit(EventType.TRANSCRIPT_AGENT, text=transcript, session_id=self.session_id)
+                        event_bus.emit(EventType.TRANSCRIPT_AGENT, session_id=self._auth_session_id, text=transcript, vl_session_id=self.session_id)
                         call_history.add_transcript_turn("agent", transcript)
 
         except asyncio.CancelledError:
@@ -321,4 +322,4 @@ class SpeechService:
             self._output_queue.append(frame)
             # Emit RMS for agent waveform
             rms = _calculate_rms(frame)
-            event_bus.emit(EventType.AUDIO_RMS, channel="agent", rms=rms, session_id=self.session_id)
+            event_bus.emit(EventType.AUDIO_RMS, session_id=self._auth_session_id, channel="agent", rms=rms, vl_session_id=self.session_id)

@@ -29,7 +29,7 @@ class CallSession:
         self.call_id = call_id
         self.session_id = session_id
         self._app_state = app_state
-        self.speech: SpeechService = SpeechService()
+        self.speech: SpeechService = SpeechService(auth_session_id=session_id)
         self._timeout_task: asyncio.Task | None = None
         self._hangup_callback: asyncio.Future | None = None
 
