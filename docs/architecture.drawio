@@ -1,0 +1,241 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="Live Voice Agent Studio" id="arch-v4">
+    <mxGraphModel dx="1800" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1200" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="Live Voice Agent Studio" style="text;html=1;fontSize=24;fontStyle=1;align=center;verticalAlign=middle;fillColor=none;strokeColor=none;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="500" y="15" width="400" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Architecture Overview" style="text;html=1;fontSize=12;align=center;verticalAlign=middle;fillColor=none;strokeColor=none;fontColor=#999999;" vertex="1" parent="1">
+          <mxGeometry x="560" y="48" width="280" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="user-icon" value="Demo User&#xa;(Browser)" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=11;image=img/lib/azure2/identity/Users.svg;verticalLabelPosition=bottom;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="340" y="90" width="52" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="phone-icon" value="PSTN Callee&#xa;(Phone)" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=11;image=img/lib/azure2/other/Azure_Communication_Services.svg;verticalLabelPosition=bottom;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="1330" y="320" width="52" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="fe-box" value="React Frontend (Vite + TypeScript + Tailwind v4)" style="swimlane;startSize=28;fillColor=#E6F2FF;strokeColor=#0078D4;strokeWidth=2;rounded=1;arcSize=8;html=1;fontStyle=1;fontSize=12;fontColor=#0078D4;swimlaneLine=0;container=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="140" y="200" width="440" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="fe-prompt" value="PromptEditor" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#0078D4;fontSize=10;" vertex="1" parent="fe-box">
+          <mxGeometry x="12" y="40" width="95" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="fe-call" value="CallControls" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#0078D4;fontSize=10;" vertex="1" parent="fe-box">
+          <mxGeometry x="118" y="40" width="95" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="fe-diag" value="DiagnosticsPanel" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#0078D4;fontSize=10;" vertex="1" parent="fe-box">
+          <mxGeometry x="224" y="40" width="105" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="fe-login" value="LoginScreen" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#0078D4;fontSize=10;" vertex="1" parent="fe-box">
+          <mxGeometry x="340" y="40" width="88" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="fe-ws" value="WebSocket hooks (auto-reconnect)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#0078D4;fontSize=9;" vertex="1" parent="fe-box">
+          <mxGeometry x="12" y="82" width="416" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="e-user-fe" value="HTTPS" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#0078D4;strokeWidth=2;fontSize=9;fontColor=#0078D4;" edge="1" parent="1" source="user-icon" target="fe-box">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="aca-box" value="Azure Container Apps &#8212; FastAPI (gunicorn + uvicorn, single worker)" style="swimlane;startSize=32;fillColor=#F5F5F5;strokeColor=#444444;strokeWidth=2;rounded=1;arcSize=5;html=1;fontStyle=1;fontSize=13;fontColor=#333333;swimlaneLine=0;container=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="60" y="400" width="780" height="440" as="geometry" />
+        </mxCell>
+        <mxCell id="auth-mw" value="&lt;b&gt;Auth Middleware&lt;/b&gt;&#xa;token &#8594; session_id" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#E65100;fontSize=10;align=center;" vertex="1" parent="aca-box">
+          <mxGeometry x="280" y="45" width="160" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="r-calls" value="&lt;b&gt;/call/*&lt;/b&gt;&#xa;start, hangup, events" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#388E3C;fontSize=10;align=center;" vertex="1" parent="aca-box">
+          <mxGeometry x="20" y="120" width="125" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="r-api" value="&lt;b&gt;/api/*&lt;/b&gt;&#xa;prompts CRUD, AI gen" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#388E3C;fontSize=10;align=center;" vertex="1" parent="aca-box">
+          <mxGeometry x="165" y="120" width="125" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="r-media" value="&lt;b&gt;/media/{token}&lt;/b&gt;&#xa;WS audio bridge" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#388E3C;fontSize=10;align=center;" vertex="1" parent="aca-box">
+          <mxGeometry x="310" y="120" width="125" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="r-ws" value="&lt;b&gt;/ws/*&lt;/b&gt;&#xa;diagnostics, call-status" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#388E3C;fontSize=10;align=center;" vertex="1" parent="aca-box">
+          <mxGeometry x="455" y="120" width="135" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="r-health" value="&lt;b&gt;/health /status&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#388E3C;fontSize=10;align=center;" vertex="1" parent="aca-box">
+          <mxGeometry x="610" y="120" width="110" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="s-callmgr" value="&lt;b&gt;CallManager&lt;/b&gt;&#xa;Multi-session orchestrator&#xa;media_token &#8594; session_id" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1565C0;fontSize=10;align=center;" vertex="1" parent="aca-box">
+          <mxGeometry x="20" y="215" width="150" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="s-prompt" value="&lt;b&gt;PromptStore&lt;/b&gt;&#xa;JSON file CRUD" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1565C0;fontSize=10;align=center;" vertex="1" parent="aca-box">
+          <mxGeometry x="195" y="220" width="110" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="s-bridge" value="&lt;b&gt;MediaBridge&lt;/b&gt;&#xa;24kHz PCM bidirectional&#xa;Clock-aligned timing" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1565C0;fontSize=10;align=center;" vertex="1" parent="aca-box">
+          <mxGeometry x="325" y="215" width="150" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="s-eventbus" value="&lt;b&gt;EventBus&lt;/b&gt;&#xa;Session-scoped pub/sub&#xa;16 event types" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1565C0;fontSize=10;align=center;" vertex="1" parent="aca-box">
+          <mxGeometry x="500" y="215" width="130" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="s-state" value="&lt;b&gt;AppState&lt;/b&gt;&#xa;Per-session metrics" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1565C0;fontSize=10;align=center;" vertex="1" parent="aca-box">
+          <mxGeometry x="650" y="220" width="100" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="s-session" value="&lt;b&gt;CallSession&lt;/b&gt;&#xa;Per-call lifecycle&#xa;Timeout watcher (300s)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1565C0;fontSize=10;align=center;" vertex="1" parent="aca-box">
+          <mxGeometry x="20" y="330" width="150" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="s-speech" value="&lt;b&gt;SpeechService&lt;/b&gt;&#xa;Voice Live 1.1.0 SDK&#xa;24kHz &#183; VAD (350ms) &#183; Noise reduction&#xa;Echo cancellation &#183; Barge-in" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EDE7F6;strokeColor=#4527A0;fontSize=10;align=center;" vertex="1" parent="aca-box">
+          <mxGeometry x="220" y="320" width="200" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="s-inference" value="&lt;b&gt;InferenceService&lt;/b&gt;&#xa;AI scenario generation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1565C0;fontSize=10;align=center;" vertex="1" parent="aca-box">
+          <mxGeometry x="480" y="340" width="140" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="s-history" value="&lt;b&gt;CallHistory&lt;/b&gt;&#xa;Transcript JSON" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1565C0;fontSize=10;align=center;" vertex="1" parent="aca-box">
+          <mxGeometry x="650" y="340" width="100" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="e-rc-cm" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#1565C0;strokeWidth=1.5;" edge="1" parent="aca-box" source="r-calls" target="s-callmgr">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-ra-ps" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#1565C0;strokeWidth=1.5;" edge="1" parent="aca-box" source="r-api" target="s-prompt">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-rm-mb" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#1565C0;strokeWidth=1.5;" edge="1" parent="aca-box" source="r-media" target="s-bridge">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-rw-eb" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#1565C0;strokeWidth=1.5;" edge="1" parent="aca-box" source="r-ws" target="s-eventbus">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-rh-st" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#1565C0;strokeWidth=1.5;" edge="1" parent="aca-box" source="r-health" target="s-state">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-cm-cs" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#1565C0;strokeWidth=1.5;" edge="1" parent="aca-box" source="s-callmgr" target="s-session">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-cs-sp" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#4527A0;strokeWidth=2;" edge="1" parent="aca-box" source="s-session" target="s-speech">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-mb-sp" value="get_speech(session_id)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#4527A0;strokeWidth=1.5;dashed=1;fontSize=9;fontColor=#4527A0;fontStyle=2;" edge="1" parent="aca-box" source="s-bridge" target="s-speech">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-api-inf" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#1565C0;strokeWidth=1;dashed=1;" edge="1" parent="aca-box" source="r-api" target="s-inference">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="228" y="195" />
+              <mxPoint x="550" y="195" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-fe-aca" value="REST + WebSocket" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#444444;strokeWidth=2;fontSize=10;fontColor=#666666;" edge="1" parent="1" source="fe-box" target="aca-box">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="az-svc-label" value="Azure Services" style="text;html=1;fontSize=14;fontStyle=1;align=center;verticalAlign=middle;fillColor=none;strokeColor=none;fontColor=#0078D4;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="170" width="180" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="logs-icon" value="Log Analytics" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=11;image=img/lib/azure2/analytics/Log_Analytics_Workspaces.svg;verticalLabelPosition=bottom;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="970" y="210" width="52" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="acr-icon" value="Container Registry" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=11;image=img/lib/azure2/containers/Container_Registries.svg;verticalLabelPosition=bottom;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="1140" y="210" width="52" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="acs-icon" value="Communication&#xa;Services (ACS)" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=11;image=img/lib/azure2/other/ACS_Solutions_Builder.svg;verticalLabelPosition=bottom;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="1060" y="380" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="kv-icon" value="Key Vault" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=11;image=img/lib/azure2/security/Key_Vaults.svg;verticalLabelPosition=bottom;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="380" width="52" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="vl-icon" value="Azure AI&#xa;Voice Live 1.1.0" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=11;image=img/lib/azure2/ai_machine_learning/Cognitive_Services.svg;verticalLabelPosition=bottom;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="970" y="580" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="foundry-icon" value="Azure AI Foundry&#xa;gpt-4.1-mini" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=11;image=img/lib/azure2/ai_machine_learning/Azure_OpenAI.svg;verticalLabelPosition=bottom;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="1200" y="580" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="e-acs-pstn" value="PSTN" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#E65100;strokeWidth=2;fontSize=10;fontColor=#E65100;fontStyle=1;" edge="1" parent="1" source="acs-icon" target="phone-icon">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-cm-acs" value="Create / Hangup" style="edgeStyle=elbowEdgeStyle;elbow=vertical;rounded=1;html=1;strokeColor=#E65100;strokeWidth=2;fontSize=9;fontColor=#E65100;exitX=1;exitY=0.4;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="aca-box" target="acs-icon">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-acs-media" value="WebSocket&#xa;24kHz PCM" style="edgeStyle=elbowEdgeStyle;elbow=vertical;rounded=1;html=1;strokeColor=#4527A0;strokeWidth=2;fontSize=9;fontColor=#4527A0;fontStyle=1;exitX=0;exitY=0.8;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="acs-icon" target="aca-box">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="910" y="500" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-acs-events" value="Webhooks" style="edgeStyle=elbowEdgeStyle;elbow=vertical;rounded=1;html=1;strokeColor=#E65100;strokeWidth=1.5;dashed=1;fontSize=9;fontColor=#E65100;fontStyle=2;exitX=0;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0.65;entryDx=0;entryDy=0;" edge="1" parent="1" source="acs-icon" target="aca-box">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="900" y="690" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-sp-vl" value="WebSocket 24kHz&#xa;+ transcripts" style="edgeStyle=elbowEdgeStyle;elbow=vertical;rounded=1;html=1;strokeColor=#4527A0;strokeWidth=2;fontSize=9;fontColor=#4527A0;fontStyle=1;exitX=1;exitY=0.85;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="aca-box" target="vl-icon">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="910" y="770" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-inf-foundry" value="Chat completions" style="edgeStyle=elbowEdgeStyle;elbow=vertical;rounded=1;html=1;strokeColor=#1565C0;strokeWidth=1.5;fontSize=9;fontColor=#1565C0;exitX=1;exitY=0.95;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="aca-box" target="foundry-icon">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="920" y="818" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-auth-kv" value="Load passwords" style="edgeStyle=elbowEdgeStyle;elbow=vertical;rounded=1;html=1;strokeColor=#E65100;strokeWidth=1.5;dashed=1;fontSize=9;fontColor=#E65100;exitX=1;exitY=0.25;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="aca-box" target="kv-icon">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-aca-acr" value="Image pull" style="edgeStyle=elbowEdgeStyle;elbow=vertical;rounded=1;html=1;strokeColor=#999999;strokeWidth=1;dashed=1;fontSize=9;fontColor=#999999;exitX=1;exitY=0;exitDx=0;exitDy=0;entryX=0;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="aca-box" target="acr-icon">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-aca-logs" value="Diagnostics" style="edgeStyle=elbowEdgeStyle;elbow=vertical;rounded=1;html=1;strokeColor=#999999;strokeWidth=1;dashed=1;fontSize=9;fontColor=#999999;exitX=0.85;exitY=0;exitDx=0;exitDy=0;entryX=0;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="aca-box" target="logs-icon">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="audio-note" value="&lt;b&gt;Audio Path (bidirectional 24kHz PCM):&lt;/b&gt;  Phone &#8596; ACS &#8596; MediaBridge &#8596; SpeechService &#8596; Voice Live" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#4527A0;fontSize=10;align=center;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="60" y="890" width="500" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="session-note" value="&lt;b&gt;Session Isolation:&lt;/b&gt;  Each auth token &#8594; unique session_id. Concurrent calls supported (one per session). State/events scoped per session." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#E65100;fontSize=10;align=center;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="60" y="940" width="500" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FAFAFA;strokeColor=#DDDDDD;" vertex="1" parent="1">
+          <mxGeometry x="620" y="890" width="510" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="leg-title" value="&lt;b&gt;Legend&lt;/b&gt;" style="text;html=1;fontSize=11;fillColor=none;strokeColor=none;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="635" y="893" width="60" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="leg1a" value="" style="endArrow=classic;html=1;strokeColor=#E65100;strokeWidth=2;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="640" y="930" as="sourcePoint" />
+            <mxPoint x="690" y="930" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="leg1t" value="Call / PSTN flow" style="text;html=1;fontSize=10;fillColor=none;strokeColor=none;fontColor=#E65100;" vertex="1" parent="1">
+          <mxGeometry x="695" y="922" width="95" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="leg2a" value="" style="endArrow=classic;html=1;strokeColor=#4527A0;strokeWidth=2;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="640" y="955" as="sourcePoint" />
+            <mxPoint x="690" y="955" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="leg2t" value="Audio (24kHz PCM)" style="text;html=1;fontSize=10;fillColor=none;strokeColor=none;fontColor=#4527A0;" vertex="1" parent="1">
+          <mxGeometry x="695" y="947" width="115" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="leg3a" value="" style="endArrow=classic;html=1;strokeColor=#1565C0;strokeWidth=1.5;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="850" y="930" as="sourcePoint" />
+            <mxPoint x="900" y="930" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="leg3t" value="Internal service" style="text;html=1;fontSize=10;fillColor=none;strokeColor=none;fontColor=#1565C0;" vertex="1" parent="1">
+          <mxGeometry x="905" y="922" width="95" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="leg4a" value="" style="endArrow=classic;html=1;strokeColor=#999999;strokeWidth=1;dashed=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="850" y="955" as="sourcePoint" />
+            <mxPoint x="900" y="955" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="leg4t" value="Infrastructure" style="text;html=1;fontSize=10;fillColor=none;strokeColor=none;fontColor=#999999;" vertex="1" parent="1">
+          <mxGeometry x="905" y="947" width="85" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="leg-colors" value="&lt;font color=&quot;#388E3C&quot;&gt;&#9632;&lt;/font&gt; Router  &lt;font color=&quot;#1565C0&quot;&gt;&#9632;&lt;/font&gt; Service  &lt;font color=&quot;#4527A0&quot;&gt;&#9632;&lt;/font&gt; Audio/Speech  &lt;font color=&quot;#E65100&quot;&gt;&#9632;&lt;/font&gt; Auth/Call" style="text;html=1;fontSize=10;fillColor=none;strokeColor=none;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="635" y="965" width="380" height="14" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
