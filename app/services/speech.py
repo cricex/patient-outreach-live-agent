@@ -83,7 +83,7 @@ class SpeechService:
         self._connection: Any = None
         self._session_ready = asyncio.Event()
         self._event_task: asyncio.Task | None = None
-        self._output_queue: Deque[bytes] = deque(maxlen=500)
+        self._output_queue: Deque[bytes] = deque(maxlen=2000)
         self._output_buffer = bytearray()
         self._inbound_frame_count: int = 0
 
