@@ -1,10 +1,9 @@
-"""Tests for audio resampling between ACS (16kHz) and Voice Live (24kHz)."""
+"""Tests for audio helpers after resampling removal (24kHz unified pipeline)."""
 from __future__ import annotations
 import array
 import math
 
-# Import the functions under test
-from app.services.speech import _downsample_24k_to_16k, _upsample_16k_to_24k
+from app.services.speech import _calculate_rms, FRAME_BYTES
 
 
 def _make_sine_pcm(freq_hz: float, sample_rate: int, duration_ms: int) -> bytes:
@@ -17,66 +16,47 @@ def _make_sine_pcm(freq_hz: float, sample_rate: int, duration_ms: int) -> bytes:
     return samples.tobytes()
 
 
-def test_downsample_sample_count():
-    """24kHz 20ms frame (480 samples) should produce ~320 samples at 16kHz."""
-    pcm_24k = _make_sine_pcm(440, 24000, 20)
-    assert len(pcm_24k) == 960  # 480 samples * 2 bytes
-    pcm_16k = _downsample_24k_to_16k(pcm_24k)
-    samples_out = len(pcm_16k) // 2
-    assert 318 <= samples_out <= 322  # ~320 samples (20ms @ 16kHz)
+def test_frame_bytes_is_960():
+    """FRAME_BYTES should be 960 (20ms @ 24kHz = 480 samples * 2 bytes)."""
+    assert FRAME_BYTES == 960
 
 
-def test_upsample_sample_count():
-    """16kHz 20ms frame (320 samples) should produce ~480 samples at 24kHz."""
-    pcm_16k = _make_sine_pcm(440, 16000, 20)
-    assert len(pcm_16k) == 640  # 320 samples * 2 bytes
-    pcm_24k = _upsample_16k_to_24k(pcm_16k)
-    samples_out = len(pcm_24k) // 2
-    assert 478 <= samples_out <= 482  # ~480 samples (20ms @ 24kHz)
+def test_rms_silence():
+    """RMS of silence should be 0."""
+    silence = bytes(960)
+    assert _calculate_rms(silence) == 0.0
 
 
-def test_roundtrip_preserves_length():
-    """Downsample then upsample should approximately preserve sample count."""
-    pcm_24k = _make_sine_pcm(440, 24000, 100)  # 100ms
-    n_original = len(pcm_24k) // 2  # 2400 samples
-    pcm_16k = _downsample_24k_to_16k(pcm_24k)
-    pcm_back = _upsample_16k_to_24k(pcm_16k)
-    n_roundtrip = len(pcm_back) // 2
-    # Should be within ±2 samples of original
-    assert abs(n_roundtrip - n_original) <= 3
-
-
-def test_downsample_values_in_range():
-    """Output samples should stay within int16 range."""
-    # Max amplitude sine
+def test_rms_full_scale():
+    """RMS of max-amplitude square wave should be 1.0 (clamped)."""
     n = 480
-    samples = array.array("h", [32767 if i % 2 == 0 else -32768 for i in range(n)])
+    samples = array.array("h", [32767] * n)
     pcm = samples.tobytes()
-    result = _downsample_24k_to_16k(pcm)
-    out = array.array("h")
-    out.frombytes(result)
-    assert all(-32768 <= s <= 32767 for s in out)
+    rms = _calculate_rms(pcm)
+    assert rms > 0.9
 
 
-def test_upsample_values_in_range():
-    """Output samples should stay within int16 range."""
-    n = 320
-    samples = array.array("h", [32767 if i % 2 == 0 else -32768 for i in range(n)])
-    pcm = samples.tobytes()
-    result = _upsample_16k_to_24k(pcm)
-    out = array.array("h")
-    out.frombytes(result)
-    assert all(-32768 <= s <= 32767 for s in out)
+def test_rms_in_range():
+    """RMS of a sine wave should be between 0 and 1."""
+    pcm = _make_sine_pcm(440, 24000, 20)
+    rms = _calculate_rms(pcm)
+    assert 0.0 < rms < 1.0
 
 
-def test_empty_input():
-    """Empty bytes should return empty bytes."""
-    assert _downsample_24k_to_16k(b"") == b""
-    assert _upsample_16k_to_24k(b"") == b""
+def test_rms_empty():
+    """RMS of empty bytes should be 0."""
+    assert _calculate_rms(b"") == 0.0
 
 
-def test_tiny_input():
-    """Single sample should pass through unchanged."""
-    one_sample = array.array("h", [1000]).tobytes()
-    assert _downsample_24k_to_16k(one_sample) == one_sample
-    assert _upsample_16k_to_24k(one_sample) == one_sample
+def test_rms_one_sample():
+    """RMS of a single sample should work without error."""
+    one = array.array("h", [1000]).tobytes()
+    rms = _calculate_rms(one)
+    assert rms > 0.0
+
+
+def test_rms_louder_is_higher():
+    """Louder audio should produce higher RMS than quieter audio."""
+    quiet = array.array("h", [100] * 480).tobytes()
+    loud = array.array("h", [10000] * 480).tobytes()
+    assert _calculate_rms(loud) > _calculate_rms(quiet)

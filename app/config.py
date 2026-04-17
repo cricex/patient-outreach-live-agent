@@ -54,7 +54,7 @@ class Settings(BaseModel):
     # Server VAD tuning — the SDK's ServerVad replaces manual flush gating
     voicelive_vad_threshold: float = 0.5
     voicelive_vad_prefix_padding_ms: int = 300
-    voicelive_vad_silence_duration_ms: int = 500
+    voicelive_vad_silence_duration_ms: int = 350
 
     # ── Foundry inference (prompt generation via chat completions) ─────
     foundry_inference_endpoint: str | None = None
@@ -62,15 +62,15 @@ class Settings(BaseModel):
     foundry_inference_api_key: str | None = None
 
     # ── Call lifecycle ──────────────────────────────────────────────────
-    call_timeout_sec: int = 600
-    call_idle_timeout_sec: int = 120
+    call_timeout_sec: int = 300
+    call_idle_timeout_sec: int = 300
     enable_call_recording: bool = False
 
     # ── Media bridge ────────────────────────────────────────────────────
     media_bidirectional: bool = True
     media_start_at_create: bool = True
     media_audio_channel_type: str = "mixed"
-    media_frame_bytes: int = 640
+    media_frame_bytes: int = 960
     media_frame_interval_ms: int = 20
     media_enable_voicelive_in: bool = True
     media_enable_voicelive_out: bool = True
@@ -157,22 +157,22 @@ def load_settings() -> Settings:
         # Server VAD
         voicelive_vad_threshold=float(os.getenv("VOICELIVE_VAD_THRESHOLD", "0.5")),
         voicelive_vad_prefix_padding_ms=int(os.getenv("VOICELIVE_VAD_PREFIX_PADDING_MS", "300")),
-        voicelive_vad_silence_duration_ms=int(os.getenv("VOICELIVE_VAD_SILENCE_DURATION_MS", "500")),
+        voicelive_vad_silence_duration_ms=int(os.getenv("VOICELIVE_VAD_SILENCE_DURATION_MS", "350")),
         # Foundry inference
         foundry_inference_endpoint=os.getenv("FOUNDRY_INFERENCE_ENDPOINT"),
         foundry_inference_model=os.getenv("FOUNDRY_INFERENCE_MODEL", "gpt-4o"),
         foundry_inference_api_key=os.getenv("FOUNDRY_INFERENCE_API_KEY"),
         # Call lifecycle
-        call_timeout_sec=int(os.getenv("CALL_TIMEOUT_SEC", "90")),
+        call_timeout_sec=int(os.getenv("CALL_TIMEOUT_SEC", "300")),
         call_idle_timeout_sec=int(
-            os.getenv("CALL_IDLE_TIMEOUT_SEC", os.getenv("CALL_TIMEOUT_SEC", "90"))
+            os.getenv("CALL_IDLE_TIMEOUT_SEC", os.getenv("CALL_TIMEOUT_SEC", "300"))
         ),
         enable_call_recording=_env_bool("ENABLE_CALL_RECORDING", "false"),
         # Media bridge
         media_bidirectional=_env_bool("MEDIA_BIDIRECTIONAL", "true"),
         media_start_at_create=_env_bool("MEDIA_START_AT_CREATE", "true"),
         media_audio_channel_type=os.getenv("MEDIA_AUDIO_CHANNEL_TYPE", "mixed").lower(),
-        media_frame_bytes=int(os.getenv("MEDIA_FRAME_BYTES", "640")),
+        media_frame_bytes=int(os.getenv("MEDIA_FRAME_BYTES", "960")),
         media_frame_interval_ms=int(os.getenv("MEDIA_FRAME_INTERVAL_MS", "20")),
         media_enable_voicelive_in=_env_bool("MEDIA_ENABLE_VL_IN", "true"),
         media_enable_voicelive_out=_env_bool("MEDIA_ENABLE_VL_OUT", "true"),

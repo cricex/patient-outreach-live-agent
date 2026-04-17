@@ -5,6 +5,7 @@ import logging
 
 from fastapi import APIRouter, HTTPException, Request
 
+from ..auth import get_session_id
 from ..models.requests import (
     CallEventsResponse,
     HangupResponse,
@@ -17,9 +18,16 @@ logger = logging.getLogger("app.main")
 router = APIRouter(prefix="/call", tags=["calls"])
 
 
+def _session_id_from_request(request: Request) -> str:
+    """Extract auth token from request and resolve to session_id."""
+    token = request.headers.get("x-auth-token", "")
+    return get_session_id(token)
+
+
 @router.post("/start", response_model=StartCallResponse)
-async def start_call(payload: StartCallRequest):
+async def start_call(payload: StartCallRequest, request: Request):
     """Initiate an outbound call or simulate locally."""
+    session_id = _session_id_from_request(request)
     try:
         # Combine system prompt and call brief into a single instruction set
         prompt_parts = []
@@ -30,6 +38,7 @@ async def start_call(payload: StartCallRequest):
         combined_prompt = "\n\n".join(prompt_parts) if prompt_parts else None
 
         call_id, dest, prompt = await call_manager.start_call(
+            session_id=session_id,
             target_phone=payload.target_phone_number,
             system_prompt=combined_prompt,
             simulate=payload.simulate,
@@ -42,11 +51,13 @@ async def start_call(payload: StartCallRequest):
 
 
 @router.post("/hangup", response_model=HangupResponse)
-async def hangup():
-    """Terminate the active call."""
-    if not call_manager.current_session:
+async def hangup(request: Request):
+    """Terminate the active call for this session."""
+    session_id = _session_id_from_request(request)
+    session = call_manager.get_session(session_id)
+    if not session:
         raise HTTPException(409, "No active call")
-    call_id = await call_manager.end_call(reason="ManualHangup")
+    call_id = await call_manager.end_call(session_id, reason="ManualHangup")
     return HangupResponse(ok=True, call_id=call_id or "unknown")
 
 
