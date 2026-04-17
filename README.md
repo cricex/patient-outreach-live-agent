@@ -1,6 +1,14 @@
-# Live Voice Agent Studio
+# ⚠️ This repository has moved
 
-> Realtime voice agent demo platform using Azure Communication Services (ACS) and Azure AI Voice Live. Supports any industry — healthcare patient outreach, prior authorization, insurance, legal, retail, and more. **Not HIPAA-compliant — synthetic data only.**
+**This project is now maintained at: [cricex/realtime-ai-outreach](https://github.com/cricex/realtime-ai-outreach)**
+
+Please use the new repository for all future work, issues, and contributions.
+
+---
+
+# Live Voice Agent Studio (archived)
+
+> Realtime voice agent demo platform using Azure Communication Services (ACS) and Azure AI Voice Live. Supports any industry — healthcare, government, education, and more. **Not HIPAA-compliant — synthetic data only.**
 
 ---
 
