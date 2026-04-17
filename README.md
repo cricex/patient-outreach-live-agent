@@ -151,7 +151,7 @@ Configuration is loaded via `python-dotenv` with layered files: `.env` → `.env
 | Echo cancellation | `VOICELIVE_ECHO_CANCELLATION` | `true` | Server-side echo cancellation |
 | VAD threshold | `VOICELIVE_VAD_THRESHOLD` | `0.5` | Speech detection probability (0.0–1.0) |
 | VAD prefix padding | `VOICELIVE_VAD_PREFIX_PADDING_MS` | `300` | Audio kept before detected speech (ms) |
-| VAD silence duration | `VOICELIVE_VAD_SILENCE_DURATION_MS` | `500` | Silence before end-of-turn (ms) |
+| VAD silence duration | `VOICELIVE_VAD_SILENCE_DURATION_MS` | `350` | Silence before end-of-turn (ms) |
 
 ### Foundry inference (optional — AI prompt generation)
 
@@ -165,8 +165,8 @@ Configuration is loaded via `python-dotenv` with layered files: `.env` → `.env
 
 | Variable | Env name | Default | Description |
 |----------|----------|---------|-------------|
-| Call timeout | `CALL_TIMEOUT_SEC` | `600` | Hard max call duration (seconds) |
-| Idle timeout | `CALL_IDLE_TIMEOUT_SEC` | `120` | Idle timeout (defaults to call timeout) |
+| Call timeout | `CALL_TIMEOUT_SEC` | `300` | Hard max call duration (seconds) |
+| Idle timeout | `CALL_IDLE_TIMEOUT_SEC` | `300` | Idle timeout (defaults to call timeout) |
 | Call recording | `ENABLE_CALL_RECORDING` | `false` | Enable ACS call recording |
 
 ### Media bridge
