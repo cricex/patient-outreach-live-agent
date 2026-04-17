@@ -4,6 +4,7 @@ import { PromptEditor } from './components/PromptEditor'
 import { CallControls } from './components/CallControls'
 import { DiagnosticsPanel } from './components/DiagnosticsPanel'
 import { useDemoMode } from './hooks/useDemoMode'
+import { api } from './api/client'
 import type { PromptSet } from './types'
 
 function App() {
@@ -46,7 +47,7 @@ function App() {
     }
     // Fetch fresh from API to ensure we have latest data
     try {
-      const prompt = await fetch(`/api/prompts/${id}`).then(r => r.json())
+      const prompt = await api.getPrompt(id) as PromptSet
       setSelectedScenario(prompt)
     } catch {
       const found = scenarios.find(s => s.id === id)
