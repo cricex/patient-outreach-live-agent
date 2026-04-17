@@ -5,7 +5,7 @@ WORKDIR /build
 COPY frontend/package*.json ./
 RUN npm ci
 COPY frontend/ .
-RUN npm run build
+RUN chmod +x node_modules/.bin/* && npm run build
 
 # ---- Stage 2: Python runtime ----
 FROM python:3.12-slim AS runtime
