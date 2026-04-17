@@ -54,7 +54,7 @@ class Settings(BaseModel):
     # Server VAD tuning — the SDK's ServerVad replaces manual flush gating
     voicelive_vad_threshold: float = 0.5
     voicelive_vad_prefix_padding_ms: int = 300
-    voicelive_vad_silence_duration_ms: int = 500
+    voicelive_vad_silence_duration_ms: int = 350
 
     # ── Foundry inference (prompt generation via chat completions) ─────
     foundry_inference_endpoint: str | None = None
@@ -62,8 +62,8 @@ class Settings(BaseModel):
     foundry_inference_api_key: str | None = None
 
     # ── Call lifecycle ──────────────────────────────────────────────────
-    call_timeout_sec: int = 600
-    call_idle_timeout_sec: int = 120
+    call_timeout_sec: int = 300
+    call_idle_timeout_sec: int = 300
     enable_call_recording: bool = False
 
     # ── Media bridge ────────────────────────────────────────────────────
@@ -157,15 +157,15 @@ def load_settings() -> Settings:
         # Server VAD
         voicelive_vad_threshold=float(os.getenv("VOICELIVE_VAD_THRESHOLD", "0.5")),
         voicelive_vad_prefix_padding_ms=int(os.getenv("VOICELIVE_VAD_PREFIX_PADDING_MS", "300")),
-        voicelive_vad_silence_duration_ms=int(os.getenv("VOICELIVE_VAD_SILENCE_DURATION_MS", "500")),
+        voicelive_vad_silence_duration_ms=int(os.getenv("VOICELIVE_VAD_SILENCE_DURATION_MS", "350")),
         # Foundry inference
         foundry_inference_endpoint=os.getenv("FOUNDRY_INFERENCE_ENDPOINT"),
         foundry_inference_model=os.getenv("FOUNDRY_INFERENCE_MODEL", "gpt-4o"),
         foundry_inference_api_key=os.getenv("FOUNDRY_INFERENCE_API_KEY"),
         # Call lifecycle
-        call_timeout_sec=int(os.getenv("CALL_TIMEOUT_SEC", "600")),
+        call_timeout_sec=int(os.getenv("CALL_TIMEOUT_SEC", "300")),
         call_idle_timeout_sec=int(
-            os.getenv("CALL_IDLE_TIMEOUT_SEC", os.getenv("CALL_TIMEOUT_SEC", "120"))
+            os.getenv("CALL_IDLE_TIMEOUT_SEC", os.getenv("CALL_TIMEOUT_SEC", "300"))
         ),
         enable_call_recording=_env_bool("ENABLE_CALL_RECORDING", "false"),
         # Media bridge

@@ -166,6 +166,7 @@ async def _forward_inbound(
     frame_count = len(pcm) // FRAME_BYTES
     if frame_count:
         app_state.get_media(session_id).record_inbound(frame_count, len(pcm))
+        app_state.update_last_event(session_id)  # Keep idle timer alive during audio flow
 
     if not (speech and speech.active and settings.media_enable_voicelive_in):
         return
